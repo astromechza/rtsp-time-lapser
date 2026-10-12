@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="latest">
+  {% if let Some(latest) = latest %}
+  <img class="frame frame-large" src="/latest.jpg" alt="Latest frame">
+  <p class="meta">
+    {{ latest.time }} UTC &middot; {{ latest.age }} ago
+    {% if healthy %}<span class="badge badge-ok">healthy</span>{% else %}<span class="badge badge-bad">stale</span>{% endif %}
+  </p>
+  {% else %}
+  <p class="empty">No frames captured yet.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Days</h2>
+  {% if days.is_empty() %}
+  <p class="empty">No days yet.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Date (UTC)</th><th class="num">Frames</th></tr></thead>
+    <tbody>
+      {% for day in days %}
+      <tr><td><a href="/days/{{ day.date }}">{{ day.date }}</a></td><td class="num">{{ day.frame_count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

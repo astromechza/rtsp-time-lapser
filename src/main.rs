@@ -6,6 +6,7 @@ mod config;
 mod ffmpeg;
 mod metrics;
 mod store;
+mod web;
 
 use clap::Parser;
 

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}{{ date }} &middot; Window timelapse{% endblock %}
+
+{% block content %}
+<nav class="day-nav">
+  {% if let Some(prev) = prev %}<a href="/days/{{ prev }}">&larr; {{ prev }}</a>{% else %}<span></span>{% endif %}
+  <h1>{{ date }}</h1>
+  {% if let Some(next) = next %}<a href="/days/{{ next }}">{{ next }} &rarr;</a>{% else %}<span></span>{% endif %}
+</nav>
+
+<p class="meta">{{ frames.len() }} frames</p>
+
+<div class="grid">
+  {% for frame in samples %}
+  <figure class="tile">
+    <a href="{{ frame.url() }}"><img class="frame" src="{{ frame.url() }}" alt="{{ frame.name }}" loading="lazy"></a>
+    <figcaption>{{ frame.time.format("%H:%M") }}</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+
+<details class="all-frames">
+  <summary>All frames</summary>
+  <ul class="frame-list">
+    {% for frame in frames %}
+    <li><a href="{{ frame.url() }}">{{ frame.name }}</a></li>
+    {% endfor %}
+  </ul>
+</details>
+{% endblock %}
