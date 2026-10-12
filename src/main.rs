@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod config;
+mod store;
 
 use clap::Parser;
 
