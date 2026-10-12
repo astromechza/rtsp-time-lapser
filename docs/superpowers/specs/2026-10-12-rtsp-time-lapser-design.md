@@ -192,7 +192,7 @@ The image is built and pushed locally; CI does not build images. The target serv
   - Resources: requests `100m` CPU / `64Mi`; limit `512Mi` memory; no CPU limit.
   - `startupProbe`: `/healthz`, period 10s, failureThreshold 30.
   - `livenessProbe`: `/healthz`, period 60s, failureThreshold 10 (~10 min restart cadence when frames are stale).
-  - `readinessProbe`: `/healthz`, period 30s.
+  - `readinessProbe`: TCP socket on the HTTP port, period 30s. Not `/healthz`: the UI must stay browsable while the camera is down.
   - Pod annotations `prometheus.io/scrape: "true"`, `prometheus.io/port: "8080"`, `prometheus.io/path: /metrics`.
 - `service.yaml`: ClusterIP, port 80 → 8080.
 - `secret.example.yaml`: documents the Secret shape; **not** referenced by the kustomization.

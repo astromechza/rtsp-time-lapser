@@ -59,8 +59,10 @@ spec:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 60
             failureThreshold: 10
+          # Readiness only checks the server is up: the UI should stay browsable while
+          # the camera is down. Stale frames are handled by the liveness probe.
           readinessProbe:
-            httpGet: { path: /healthz, port: http }
+            tcpSocket: { port: http }
             periodSeconds: 30
           volumeMounts:
             - name: data
