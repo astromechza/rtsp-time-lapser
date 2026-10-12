@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rtsp-time-lapser
+  labels:
+    app.kubernetes.io/name: rtsp-time-lapser
+spec:
+  replicas: 1
+  # Never run two capture loops against the same PVC.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rtsp-time-lapser
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rtsp-time-lapser
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: rtsp-time-lapser
+          image: ghcr.io/astromechza/rtsp-time-lapser
+          env:
+            - name: RTSP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rtsp-time-lapser
+                  key: RTSP_URL
+            - name: DATA_DIR
+              value: /data
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 60
+            failureThreshold: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rtsp-time-lapser-data
+        - name: tmp
+          emptyDir: {}
