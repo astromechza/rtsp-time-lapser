@@ -7,6 +7,7 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use tracing::warn;
 
 const DAY_FORMAT: &str = "%Y-%m-%d";
 const FRAME_FORMAT: &str = "%Y%m%d-%H%M";
@@ -162,7 +163,14 @@ fn remove_parts(dir: &Path) -> io::Result<usize> {
         let entry = entry?;
         let path = entry.path();
         if entry.file_type()?.is_dir() {
-            removed += remove_parts(&path)?;
+            // A foreign directory we cannot read (e.g. a root-owned lost+found) must not
+            // stop startup.
+            match remove_parts(&path) {
+                Ok(n) => removed += n,
+                Err(e) => {
+                    warn!(path = %path.display(), error = %e, "skipping unreadable directory")
+                }
+            }
         } else if path.as_os_str().to_string_lossy().ends_with(PART_SUFFIX) {
             fs::remove_file(&path)?;
             removed += 1;
@@ -287,6 +295,22 @@ mod tests {
     fn newest_frame_none_when_empty() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(Store::new(dir.path()).newest_frame().unwrap(), None);
+    }
+
+    #[test]
+    fn cleanup_parts_skips_unreadable_directories() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        touch(&part_path(&store.frame_path(at(2026, 10, 11, 0, 1))));
+        let locked = dir.path().join("lost+found");
+        fs::create_dir(&locked).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = store.cleanup_parts();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(result.unwrap(), 1);
     }
 
     #[test]
