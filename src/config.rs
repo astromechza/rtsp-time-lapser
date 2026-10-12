@@ -75,11 +75,18 @@ impl RtspUrl {
         &self.0
     }
 
-    /// The `user:pass` part of the authority, if any.
+    /// Split into `(scheme, userinfo, host_and_path)` when the URL has `user:pass@`.
+    /// Uses the last `@` so unencoded `@`, `/`, `?` or `#` in the password still count as
+    /// userinfo. Errs towards redacting too much: `host:port/path@x` is treated as userinfo.
+    fn parts(&self) -> Option<(&str, &str, &str)> {
+        let (scheme, rest) = self.0.split_once("://")?;
+        let (userinfo, host) = rest.rsplit_once('@')?;
+        userinfo.contains(':').then_some((scheme, userinfo, host))
+    }
+
+    /// The `user:pass` part of the URL, if any.
     fn userinfo(&self) -> Option<&str> {
-        let (_, rest) = self.0.split_once("://")?;
-        let authority = rest.split('/').next().unwrap_or(rest);
-        authority.rsplit_once('@').map(|(userinfo, _)| userinfo)
+        self.parts().map(|(_, userinfo, _)| userinfo)
     }
 }
 
@@ -93,8 +100,8 @@ impl FromStr for RtspUrl {
 
 impl fmt::Display for RtspUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.userinfo() {
-            Some(userinfo) => f.write_str(&self.0.replacen(userinfo, "***", 1)),
+        match self.parts() {
+            Some((scheme, _, host)) => write!(f, "{scheme}://***@{host}"),
             None => f.write_str(&self.0),
         }
     }
@@ -167,6 +174,25 @@ mod tests {
         let url = RtspUrl::new("rtsp://viewer:p@ss@10.0.0.5/stream1");
         assert_eq!(url.to_string(), "rtsp://***@10.0.0.5/stream1");
         assert_eq!(redact("auth failed for p@ss", &url), "auth failed for ***");
+    }
+
+    #[test]
+    fn unencoded_slash_query_or_hash_in_password_is_still_hidden() {
+        for (raw, password) in [
+            ("rtsp://viewer:pa/ss@10.0.0.5/s", "pa/ss"),
+            ("rtsp://viewer:pa?ss@10.0.0.5/s", "pa?ss"),
+            ("rtsp://viewer:pa#ss@10.0.0.5/s", "pa#ss"),
+        ] {
+            let url = RtspUrl::new(raw);
+            assert_eq!(url.to_string(), "rtsp://***@10.0.0.5/s", "{raw}");
+            assert_eq!(redact(&format!("bad {password}"), &url), "bad ***", "{raw}");
+        }
+    }
+
+    #[test]
+    fn empty_password_display_hides_user() {
+        let url = RtspUrl::new("rtsp://p:@h/s");
+        assert_eq!(url.to_string(), "rtsp://***@h/s");
     }
 
     #[test]
