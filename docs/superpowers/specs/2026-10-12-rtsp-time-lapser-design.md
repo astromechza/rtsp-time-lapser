@@ -188,7 +188,7 @@ The image is built and pushed locally; CI does not build images. The target serv
   - `replicas: 1`, `strategy: Recreate`.
   - Pod `securityContext`: `runAsNonRoot`, UID/GID/`fsGroup` 10001. Container: `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, drop all capabilities.
   - `RTSP_URL` from Secret `rtsp-time-lapser`, key `RTSP_URL`.
-  - PVC mounted at `/data`.
+  - PVC mounted at `/data`; `emptyDir` at `/tmp` (root filesystem is read-only).
   - Resources: requests `100m` CPU / `64Mi`; limit `512Mi` memory; no CPU limit.
   - `startupProbe`: `/healthz`, period 10s, failureThreshold 30.
   - `livenessProbe`: `/healthz`, period 60s, failureThreshold 10 (~10 min restart cadence when frames are stale).
@@ -204,10 +204,11 @@ No Ingress is shipped. The README documents an example overlay (remote base plus
 `.github/workflows/ci.yml`, on push to `main` and pull requests, `ubuntu-latest`:
 
 1. Checkout.
-2. `apt-get install -y ffmpeg`.
-3. Install the toolchain from `rust-toolchain.toml` (`dtolnay/rust-toolchain`).
-4. `Swatinem/rust-cache`.
-5. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+2. Install toolchain `1.99` with `rustfmt` and `clippy` (`dtolnay/rust-toolchain`).
+3. `Swatinem/rust-cache`.
+4. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+
+CI does not install ffmpeg: all automated tests use fake ffmpeg scripts.
 
 ## Error handling summary
 
@@ -227,6 +228,7 @@ No Ingress is shipped. The README documents an example overlay (remote base plus
 - `config` unit tests: `RtspUrl` `Debug`/`Display` redaction; `redact` scrubs the full URL and the userinfo.
 - `capture::snap` integration tests using a fake `FFMPEG_BIN` shell script: success (file present, no `.part`), exit 1 (no file, no `.part`, error counted), hang (killed after a 1 s timeout), existing target (skipped).
 - `web` router tests via `tower::ServiceExt::oneshot`: `/healthz` 200, 503 and startup grace; `/latest.jpg` redirect and 404; `/days/bad` 400; missing day 404; `/frames/../` traversal blocked; `/metrics` contains the last-frame gauge.
+- An `#[ignore]`d `real_camera` test captures one frame with real ffmpeg from `TEST_RTSP_URL`, run by hand.
 - Manual after deploy: the Notion failure-mode checklist (unplug camera, kill pod mid-capture).
 
 ## M2 outline: timelapse from JPEGs (not yet designed in detail)
