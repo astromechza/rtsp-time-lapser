@@ -8,4 +8,4 @@ resources:
   - service.yaml
 images:
   - name: ghcr.io/astromechza/rtsp-time-lapser
-    newTag: latest
+    newTag: v0.1.0
