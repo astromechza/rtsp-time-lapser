@@ -9,11 +9,14 @@ use tokio::{
 use tracing::{debug, warn};
 
 use crate::{
-    config::{Config, redact},
+    config::{Config, RtspUrl, redact},
     ffmpeg,
     metrics::Metrics,
     store::{Store, part_path},
 };
+
+/// Logged capture errors are cut to this many bytes.
+const ERROR_LOG_LIMIT: usize = 512;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -61,8 +64,7 @@ impl Capturer {
             }
             Err(e) => {
                 self.metrics.record_error();
-                // Never log the raw error: ffmpeg's stderr can contain the URL.
-                warn!(error = %redact(&format!("{e:#}"), &self.cfg.rtsp_url), "capture failed");
+                warn!(error = %describe_error(&e, &self.cfg.rtsp_url), "capture failed");
             }
         }
     }
@@ -93,6 +95,12 @@ impl Capturer {
         tokio::fs::rename(part, out).await?;
         Ok(())
     }
+}
+
+/// Loggable error text. Never log the raw error: ffmpeg's stderr can contain the URL.
+/// Redacts before truncating, so a cut can never leave a partial URL behind.
+fn describe_error(e: &anyhow::Error, url: &RtspUrl) -> String {
+    ffmpeg::truncate(&redact(&format!("{e:#}"), url), ERROR_LOG_LIMIT).to_owned()
 }
 
 fn ffmpeg_args(cfg: &Config, part: &Path) -> Vec<OsString> {
@@ -145,6 +153,11 @@ mod tests {
                     "echo 'cannot open rtsp://viewer:s3cret@10.0.0.5:554/stream1' >&2\nexit 1\n",
                 ),
                 ("empty", "for a; do out=\"$a\"; done\n: > \"$out\"\n"),
+                // The URL starts at stderr byte 495, so a 512-byte cut lands inside the password.
+                (
+                    "long",
+                    "printf '%s rtsp://viewer:s3cret@10.0.0.5:554/stream1' \"$(printf '%494s' '' | tr ' ' x)\" >&2\nexit 1\n",
+                ),
                 (
                     "hang",
                     "for a; do out=\"$a\"; done\nprintf 'partial' > \"$out\"\nexec sleep 30\n",
@@ -210,6 +223,17 @@ mod tests {
 
         c.tick(now()).await;
         assert_eq!(c.metrics.captures("error"), 1);
+    }
+
+    #[tokio::test]
+    async fn long_stderr_is_redacted_before_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = capturer(dir.path(), "long");
+
+        let err = c.snap(now()).await.unwrap_err();
+        let msg = describe_error(&err, &c.cfg.rtsp_url);
+        assert!(!msg.contains("viewer"), "{msg}");
+        assert!(!msg.contains("s3c"), "{msg}");
     }
 
     #[tokio::test]

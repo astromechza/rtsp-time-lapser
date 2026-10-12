@@ -3,10 +3,9 @@ use std::{process::Stdio, time::Duration};
 use anyhow::{Context, Result, bail};
 use tokio::{process::Command, time::timeout};
 
-const STDERR_LIMIT: usize = 512;
-
 /// Run `cmd` to completion, killing it after `limit`. Fails on spawn error, timeout or
-/// non-zero exit. The error includes stderr (truncated); callers must redact it before logging.
+/// non-zero exit. The error includes the full stderr; callers must redact, then truncate it,
+/// before logging.
 pub async fn run(mut cmd: Command, limit: Duration) -> Result<()> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -20,16 +19,13 @@ pub async fn run(mut cmd: Command, limit: Duration) -> Result<()> {
     };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "ffmpeg exited with {}: {}",
-            output.status,
-            truncate(stderr.trim(), STDERR_LIMIT)
-        );
+        bail!("ffmpeg exited with {}: {}", output.status, stderr.trim());
     }
     Ok(())
 }
 
-fn truncate(s: &str, max: usize) -> &str {
+/// Cut `s` to at most `max` bytes on a char boundary.
+pub fn truncate(s: &str, max: usize) -> &str {
     if s.len() <= max {
         return s;
     }
