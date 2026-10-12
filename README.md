@@ -42,7 +42,7 @@ RTSP_URL='rtsp://viewer:pass@10.0.0.5:554/stream1' DATA_DIR=./data LISTEN_ADDR=1
 
 ## Image
 
-Built and pushed locally with buildx (CI only runs lint and tests):
+Built and pushed locally with podman (CI only runs lint and tests). Log in once with `podman login ghcr.io`.
 
 ```bash
 make image

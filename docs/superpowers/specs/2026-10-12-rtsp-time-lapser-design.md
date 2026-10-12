@@ -173,9 +173,9 @@ Multi-stage `Dockerfile`:
 `Makefile` targets:
 
 - `fmt`, `lint`, `test`
-- `image`: `docker buildx build --platform $(PLATFORMS) -t $(IMAGE):$(TAG) --push .` with `PLATFORMS ?= linux/amd64`, `IMAGE ?= ghcr.io/astromechza/rtsp-time-lapser`, `TAG ?= $(shell git describe --tags --always --dirty)`.
+- `image`: `podman build --platform $(PLATFORMS) --manifest $(IMAGE):$(TAG) .` then `podman manifest push --all`, with `PLATFORMS ?= linux/amd64`, `IMAGE ?= ghcr.io/astromechza/rtsp-time-lapser`, `TAG ?= $(shell git describe --tags --always --dirty)`.
 
-The image is built and pushed locally; CI does not build images. The target server is an Intel Atom (amd64).
+The image is built and pushed locally with podman (Docker is not used); CI does not build images. The target server is an Intel Atom (amd64).
 
 ## Kubernetes manifests
 

@@ -14,5 +14,9 @@ lint:
 test:
 	cargo test
 
+# Builds a (multi-arch) manifest list with podman and pushes it. Any stale local
+# manifest with the same name is removed first so platforms don't accumulate.
 image:
-	docker buildx build --platform $(PLATFORMS) -t $(IMAGE):$(TAG) --push .
+	-podman manifest rm $(IMAGE):$(TAG) 2>/dev/null
+	podman build --platform $(PLATFORMS) --manifest $(IMAGE):$(TAG) .
+	podman manifest push --all $(IMAGE):$(TAG) docker://$(IMAGE):$(TAG)
