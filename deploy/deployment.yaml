@@ -21,11 +21,17 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: /metrics
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
+        # Only chown the volume when its root has the wrong group; otherwise every pod
+        # start re-chowns every frame on CSI drivers that honour fsGroup (e.g. topolvm).
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: rtsp-time-lapser
           image: ghcr.io/astromechza/rtsp-time-lapser

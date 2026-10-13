@@ -181,12 +181,12 @@ The image is built and pushed locally with podman (Docker is not used); CI does 
 
 `deploy/` is a Kustomize base:
 
-- `kustomization.yaml`: namespace `rtsp-time-lapser`; `images:` entry for the tag.
-- `namespace.yaml`.
-- `pvc.yaml`: `ReadWriteOnce`, 20Gi, no `storageClassName` (cluster default, e.g. k3s `local-path`).
+- `kustomization.yaml`: no `namespace` (the consumer chooses it via `kubectl -n` or an overlay); `images:` entry for the tag.
+- `pvc.yaml`: `ReadWriteOnce`, 20Gi, no `storageClassName` (cluster default; overlays patch it, e.g. `topolvm-provisioner` on hensteeth).
 - `deployment.yaml`:
   - `replicas: 1`, `strategy: Recreate`.
-  - Pod `securityContext`: `runAsNonRoot`, UID/GID/`fsGroup` 10001. Container: `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, drop all capabilities.
+  - `automountServiceAccountToken: false`.
+  - Pod `securityContext`: `runAsNonRoot`, UID/GID/`fsGroup` 10001, `fsGroupChangePolicy: OnRootMismatch`, `seccompProfile: RuntimeDefault`. Container: `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, drop all capabilities.
   - `RTSP_URL` from Secret `rtsp-time-lapser`, key `RTSP_URL`.
   - PVC mounted at `/data`; `emptyDir` at `/tmp` (root filesystem is read-only).
   - Resources: requests `100m` CPU / `64Mi`; limit `512Mi` memory; no CPU limit.
@@ -197,7 +197,7 @@ The image is built and pushed locally with podman (Docker is not used); CI does 
 - `service.yaml`: ClusterIP, port 80 → 8080.
 - `secret.example.yaml`: documents the Secret shape; **not** referenced by the kustomization.
 
-No Ingress is shipped. The README documents an example overlay (remote base plus an `ingress.yaml`) to adapt at install time, with a warning that the UI has no authentication and must stay LAN-only or sit behind auth.
+No Ingress is shipped. The README documents an example overlay (remote base at a pinned `?ref=`, namespace, storage-class patch and an `ingress.yaml`) to adapt at install time, with a warning that the UI has no authentication and must stay LAN-only or sit behind auth.
 
 ## CI
 

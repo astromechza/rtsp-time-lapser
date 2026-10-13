@@ -51,26 +51,38 @@ make image PLATFORMS=linux/amd64,linux/arm64 TAG=v0.1.0
 
 ## Deploy
 
+`deploy/` is a Kustomize base with no namespace and no Ingress. The simplest install:
+
 ```bash
-kubectl apply -f deploy/namespace.yaml
+kubectl create namespace rtsp-time-lapser
 kubectl -n rtsp-time-lapser create secret generic rtsp-time-lapser \
   --from-literal=RTSP_URL='rtsp://viewer:pass@10.0.0.5:554/stream1'
-kubectl apply -k deploy
+kubectl -n rtsp-time-lapser apply -k deploy
 ```
 
-Set the image tag in `deploy/kustomization.yaml` (`images[0].newTag`). Use a view-only camera account.
+Use a view-only camera account.
 
-### Ingress
+### From another repo (overlay)
 
-No Ingress ships with the base. **The UI has no authentication: anyone who can reach it sees the camera frames.** Keep it on the LAN or put auth in front. Example overlay:
+Reference the base at a pinned tag and add site-specific bits (namespace, storage class, ingress). **The UI has no authentication: anyone who can reach it sees the camera frames.** Keep it on an internal network or put auth in front.
 
 ```yaml
 # kustomization.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: production
 resources:
-  - github.com/astromechza/rtsp-time-lapser/deploy?ref=v0.1.0
+  - github.com/astromechza/rtsp-time-lapser/deploy?ref=v0.1.1
   - ingress.yaml
+images:
+  - name: ghcr.io/astromechza/rtsp-time-lapser
+    newTag: v0.1.1
+patches:
+  - target: { kind: PersistentVolumeClaim, name: rtsp-time-lapser-data }
+    patch: |
+      - op: add
+        path: /spec/storageClassName
+        value: topolvm-provisioner
 ```
 
 ```yaml
@@ -79,7 +91,6 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: rtsp-time-lapser
-  namespace: rtsp-time-lapser
 spec:
   rules:
     - host: timelapse.example.lan
