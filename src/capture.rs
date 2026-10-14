@@ -9,7 +9,7 @@ use tokio::{
 use tracing::{debug, warn};
 
 use crate::{
-    config::{Config, RtspUrl, redact},
+    config::Config,
     ffmpeg,
     metrics::Metrics,
     store::{Store, part_path},
@@ -64,7 +64,8 @@ impl Capturer {
             }
             Err(e) => {
                 self.metrics.record_error();
-                warn!(error = %describe_error(&e, &self.cfg.rtsp_url), "capture failed");
+                let error = ffmpeg::describe_error(&e, &self.cfg.rtsp_url, ERROR_LOG_LIMIT);
+                warn!(%error, "capture failed");
             }
         }
     }
@@ -97,12 +98,6 @@ impl Capturer {
     }
 }
 
-/// Loggable error text. Never log the raw error: ffmpeg's stderr can contain the URL.
-/// Redacts before truncating, so a cut can never leave a partial URL behind.
-fn describe_error(e: &anyhow::Error, url: &RtspUrl) -> String {
-    ffmpeg::truncate(&redact(&format!("{e:#}"), url), ERROR_LOG_LIMIT).to_owned()
-}
-
 fn ffmpeg_args(cfg: &Config, part: &Path) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "-nostdin",
@@ -128,50 +123,11 @@ fn ffmpeg_args(cfg: &Config, part: &Path) -> Vec<OsString> {
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, sync::OnceLock};
-
     use chrono::TimeZone;
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::config::test_config;
-
-    /// Fake ffmpeg scripts, written once. Writing them once, before any test spawns a
-    /// process, avoids "text file busy" races between writing and executing a script.
-    fn fake_ffmpeg(name: &str) -> PathBuf {
-        static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = DIR.get_or_init(|| {
-            let dir = tempfile::tempdir().unwrap();
-            let scripts = [
-                // The output path is the last argument.
-                (
-                    "ok",
-                    "for a; do out=\"$a\"; done\nprintf 'jpeg' > \"$out\"\n",
-                ),
-                (
-                    "fail",
-                    "echo 'cannot open rtsp://viewer:s3cret@10.0.0.5:554/stream1' >&2\nexit 1\n",
-                ),
-                ("empty", "for a; do out=\"$a\"; done\n: > \"$out\"\n"),
-                // The URL starts at stderr byte 495, so a 512-byte cut lands inside the password.
-                (
-                    "long",
-                    "printf '%s rtsp://viewer:s3cret@10.0.0.5:554/stream1' \"$(printf '%494s' '' | tr ' ' x)\" >&2\nexit 1\n",
-                ),
-                (
-                    "hang",
-                    "for a; do out=\"$a\"; done\nprintf 'partial' > \"$out\"\nexec sleep 30\n",
-                ),
-            ];
-            for (name, body) in scripts {
-                let path = dir.path().join(name);
-                std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            }
-            dir
-        });
-        dir.path().join(name)
-    }
+    use crate::{config::test_config, ffmpeg::fake_ffmpeg};
 
     fn capturer(data: &Path, script: &str) -> Capturer {
         let mut cfg = test_config(data, &fake_ffmpeg(script));
@@ -231,7 +187,7 @@ mod tests {
         let c = capturer(dir.path(), "long");
 
         let err = c.snap(now()).await.unwrap_err();
-        let msg = describe_error(&err, &c.cfg.rtsp_url);
+        let msg = ffmpeg::describe_error(&err, &c.cfg.rtsp_url, ERROR_LOG_LIMIT);
         assert!(!msg.contains("viewer"), "{msg}");
         assert!(!msg.contains("s3c"), "{msg}");
     }

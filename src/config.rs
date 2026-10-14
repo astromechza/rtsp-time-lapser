@@ -45,6 +45,37 @@ pub struct Config {
     /// Path to the ffmpeg binary.
     #[arg(long, env = "FFMPEG_BIN", default_value = "ffmpeg")]
     pub ffmpeg_bin: PathBuf,
+
+    /// Timelapse output frame rate.
+    #[arg(long, env = "TIMELAPSE_FPS", default_value_t = 30,
+          value_parser = clap::value_parser!(u32).range(1..))]
+    pub timelapse_fps: u32,
+
+    /// Timelapse x264 quality (-crf), 0 (lossless) to 51 (worst).
+    #[arg(long, env = "TIMELAPSE_CRF", default_value_t = 20,
+          value_parser = clap::value_parser!(u8).range(0..=51))]
+    pub timelapse_crf: u8,
+
+    /// Timelapse x264 preset: slower presets give smaller files.
+    #[arg(long, env = "TIMELAPSE_PRESET", default_value = "veryfast",
+          value_parser = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
+                          "slow", "slower", "veryslow"])]
+    pub timelapse_preset: String,
+
+    /// Downscale timelapses to at most this width when set.
+    #[arg(long, env = "TIMELAPSE_MAX_WIDTH",
+          value_parser = clap::value_parser!(u32).range(2..))]
+    pub timelapse_max_width: Option<u32>,
+
+    /// Seconds before a running encode is killed.
+    #[arg(long, env = "ENCODE_TIMEOUT_SECS", default_value_t = 7200,
+          value_parser = clap::value_parser!(u64).range(1..))]
+    pub encode_timeout_secs: u64,
+
+    /// Days to keep finished and failed timelapses.
+    #[arg(long, env = "OUT_RETENTION_DAYS", default_value_t = 7,
+          value_parser = clap::value_parser!(u64).range(1..=36_500))]
+    pub out_retention_days: u64,
 }
 
 impl Config {
@@ -58,6 +89,14 @@ impl Config {
 
     pub fn stale_after(&self) -> Duration {
         Duration::from_secs(self.stale_after_secs)
+    }
+
+    pub fn encode_timeout(&self) -> Duration {
+        Duration::from_secs(self.encode_timeout_secs)
+    }
+
+    pub fn out_retention(&self) -> Duration {
+        Duration::from_secs(self.out_retention_days * 86_400)
     }
 }
 
@@ -139,6 +178,12 @@ pub fn test_config(data_dir: &std::path::Path, ffmpeg_bin: &std::path::Path) -> 
         scale_width: None,
         stale_after_secs: 180,
         ffmpeg_bin: ffmpeg_bin.to_path_buf(),
+        timelapse_fps: 30,
+        timelapse_crf: 20,
+        timelapse_preset: "veryfast".to_owned(),
+        timelapse_max_width: None,
+        encode_timeout_secs: 5,
+        out_retention_days: 7,
     }
 }
 
@@ -208,6 +253,22 @@ mod tests {
         assert_eq!(cfg.capture_interval(), Duration::from_secs(60));
         assert_eq!(cfg.jpeg_quality, 4);
         assert_eq!(cfg.data_dir, PathBuf::from("/data"));
+    }
+
+    #[test]
+    fn parses_timelapse_defaults_and_rejects_unknown_preset() {
+        let cfg = Config::try_parse_from(["x", "--rtsp-url", "rtsp://cam/s"]).unwrap();
+        assert_eq!(cfg.timelapse_preset, "veryfast");
+        assert_eq!(cfg.timelapse_max_width, None);
+        assert_eq!(cfg.out_retention(), Duration::from_secs(7 * 86_400));
+        let res = Config::try_parse_from([
+            "x",
+            "--rtsp-url",
+            "rtsp://cam/s",
+            "--timelapse-preset",
+            "quick",
+        ]);
+        assert!(res.is_err());
     }
 
     #[test]

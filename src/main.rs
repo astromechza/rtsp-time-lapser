@@ -1,6 +1,7 @@
 #![allow(dead_code)] // Removed in Task 5, once the timelapse code is wired into main.
 mod capture;
 mod config;
+mod encoder;
 mod ffmpeg;
 mod metrics;
 mod store;
