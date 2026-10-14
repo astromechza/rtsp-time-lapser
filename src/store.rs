@@ -153,6 +153,21 @@ pub fn part_path(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// Write `path` atomically: write `<path>.part`, then rename it into place.
+pub fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let part = part_path(path);
+    fs::write(&part, contents)?;
+    fs::rename(&part, path)
+}
+
+/// Delete `path`, treating "already gone" as success.
+pub fn remove_if_exists(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        res => res,
+    }
+}
+
 /// Parse `YYYY-MM-DD`.
 pub fn parse_day_name(name: &str) -> Option<NaiveDate> {
     if name.len() != 10 {
