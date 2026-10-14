@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Window timelapse{% endblock %}</title>
   <link rel="stylesheet" href="/style.css">
+  {% block head %}{% endblock %}
 </head>
 <body>
   <header class="site-header">
     <a class="site-title" href="/">Window timelapse</a>
+    <nav class="site-nav"><a href="/timelapses">Timelapses</a></nav>
   </header>
   <main class="page">
     {% block content %}{% endblock %}

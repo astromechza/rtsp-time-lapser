@@ -8,7 +8,7 @@ use axum::{
 };
 use chrono::{NaiveDate, Timelike, Utc};
 
-use super::{AppState, health, internal_error, render};
+use super::{AppState, health, internal_error, render, timelapses::INPUT_FORMAT};
 use crate::store::{DaySummary, Frame, parse_day_name};
 
 struct Latest {
@@ -32,6 +32,8 @@ struct DayPage {
     next: Option<NaiveDate>,
     samples: Vec<Frame>,
     frames: Vec<Frame>,
+    /// End of the "Timelapse this day" range: 23:59, or the current minute for today.
+    timelapse_to: String,
 }
 
 pub async fn index(State(state): State<Arc<AppState>>) -> Response {
@@ -76,7 +78,9 @@ pub async fn day(State(state): State<Arc<AppState>>, Path(date): Path<String>) -
     // `days` is newest first.
     let next = days.iter().rev().map(|d| d.date).find(|d| *d > date);
     let prev = days.iter().map(|d| d.date).find(|d| *d < date);
+    let end_of_day = date.and_hms_opt(23, 59, 0).expect("valid time").and_utc();
     render(DayPage {
+        timelapse_to: end_of_day.min(Utc::now()).format(INPUT_FORMAT).to_string(),
         date,
         prev,
         next,

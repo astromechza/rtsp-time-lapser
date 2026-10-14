@@ -13,7 +13,7 @@ use std::{io::IsTerminal, sync::Arc};
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use clap::Parser;
-use tokio::{net::TcpListener, signal};
+use tokio::{net::TcpListener, signal, sync::Notify};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -49,6 +49,7 @@ async fn main() -> Result<()> {
         metrics,
         stale_after: cfg.stale_after(),
         started_at: Utc::now(),
+        wake: Arc::new(Notify::new()),
     });
     let listener = TcpListener::bind(cfg.listen_addr)
         .await

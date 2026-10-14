@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Timelapses &middot; Window timelapse{% endblock %}
+
+{% block head %}{% if pending %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
+
+{% block content %}
+<h1>Timelapses</h1>
+
+<form class="form" method="post" action="/timelapses">
+  <label>From (UTC) <input type="datetime-local" name="from" value="{{ default_from }}" required></label>
+  <label>To (UTC) <input type="datetime-local" name="to" value="{{ default_to }}" required></label>
+  <label>Every Nth frame <input type="number" name="step" value="1" min="1"></label>
+  <label>Daily hours from (UTC) <input type="number" name="hour_from" min="0" max="23" placeholder="any"></label>
+  <label>Daily hours to (UTC) <input type="number" name="hour_to" min="0" max="23" placeholder="any"></label>
+  <button class="button" type="submit">Create</button>
+  <p class="meta form-hint">Daily hours apply to every day in the range, e.g. 6 to 20 for daylight or 20 to 6 for nights. Leave both blank for all hours.</p>
+</form>
+
+{% if rows.is_empty() %}
+<p class="empty">No timelapses yet.</p>
+{% else %}
+<table class="table">
+  <thead><tr><th>Range (UTC)</th><th>Frames</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{% if let Some(url) = row.url %}<a href="{{ url }}">{{ row.range }}</a>{% else %}{{ row.range }}{% endif %}</td>
+      <td>{{ row.filter }}</td>
+      <td><span class="badge {{ row.badge }}" title="{{ row.name }}">{{ row.status }}</span></td>
+      <td class="meta">{{ row.detail }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
