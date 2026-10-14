@@ -19,7 +19,7 @@ Success criteria:
 | Milestone | Contents | Status of this spec |
 |---|---|---|
 | **M1** | Crate scaffold, capture loop, startup cleanup, `/healthz`, `/metrics`, HTML browse UI, container image, Kustomize manifests, CI | Fully specified; first implementation plan |
-| **M2** | Timelapse assembly from JPEGs, triggered from the HTML UI | Outline only; designed in detail after M1 is deployed |
+| **M2** | Timelapse assembly from JPEGs, triggered from the HTML UI | Specified in [M2 design](2026-10-14-m2-timelapse-assembly-design.md) |
 | **M3** | Daily H.265 archive, retention, archive-backed assembly | Outline only; designed in detail after M1 is deployed |
 
 The UI is HTML only. There is no JSON API in any milestone.
@@ -35,7 +35,7 @@ Design principles (from the Notion page, binding):
 - **UTC filenames** (`YYYYMMDD-HHMM.jpg`): lexically sortable, no DST duplicates or gaps.
 - **Health = newest frame age.**
 - **Credentials live in the RTSP URL** from a Kubernetes Secret and are never logged.
-- **Capture is isolated** from heavy work (relevant from M2: encoders run under `nice -n 19 -threads 2`).
+- ~~Capture is isolated from heavy work~~: dropped in M2. The 16-core host has ample headroom, so encoders run at normal priority with default threading, one job at a time.
 
 ### Toolchain and dependencies
 
@@ -231,13 +231,9 @@ CI does not install ffmpeg: all automated tests use fake ffmpeg scripts.
 - An `#[ignore]`d `real_camera` test captures one frame with real ffmpeg from `TEST_RTSP_URL`, run by hand.
 - Manual after deploy: the Notion failure-mode checklist (unplug camera, kill pod mid-capture).
 
-## M2 outline: timelapse from JPEGs (not yet designed in detail)
+## M2: timelapse assembly
 
-- Form on `/`: `from` and `to` (UTC), `step` (keep every Nth frame, default 1), optional hour range filter (night exclusion opt-in).
-- `POST /timelapses` targets `DATA_DIR/out/{from}_{to}_s{step}.mp4`; deterministic name makes it idempotent; redirect to the file if it already exists.
-- `Semaphore(1)` serialises jobs. Selected JPEGs are piped to `ffmpeg -f image2pipe -framerate 30 -i - -c:v libx264 -pix_fmt yuv420p -crf 20` under `nice -n 19` with `-threads 2`; `.part` then rename.
-- `GET /timelapses` lists outputs and in-progress jobs (in-progress = `.part` exists), with `<meta http-equiv="refresh">` while running.
-- Outputs older than `OUT_RETENTION_DAYS` (default 7) are pruned.
+See [M2 design](2026-10-14-m2-timelapse-assembly-design.md). M2 replaces the earlier outline: jobs are `.job` ffconcat files in `DATA_DIR/out/`, encoded one at a time by a worker task.
 
 ## M3 outline: archive and retention (not yet designed in detail)
 
@@ -250,6 +246,6 @@ CI does not install ffmpeg: all automated tests use fake ffmpeg scripts.
 ## Open questions (deferred)
 
 - Camera model, stream path and native resolution (decides whether `SCALE_WIDTH` is needed).
-- Target output resolution for timelapses (M2).
+- ~~Target output resolution for timelapses (M2)~~: native, capped by `TIMELAPSE_MAX_WIDTH`.
 - Retention values N and M (M3).
-- Night exclusion default (M2).
+- ~~Night exclusion default (M2)~~: opt-in UTC hour range, off by default.
