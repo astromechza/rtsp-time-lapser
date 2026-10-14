@@ -89,7 +89,7 @@ Status is derived from the files present for a name, in this order of precedence
 5. Remove `{name}.err` if present (resubmitting retries a failure).
 6. Write `{name}.job.part`, rename to `{name}.job`, return `Submitted::Queued`.
 
-Two concurrent submits of the same name both write the same content; the rename makes this harmless.
+Step 6 creates `{name}.job.part` exclusively (`create_new`). If it already exists, a concurrent submit of the same selection is writing it, and this submit returns `Submitted::Queued` without touching it. A part left by a crash is removed at startup.
 
 ### Restart
 

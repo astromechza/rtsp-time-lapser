@@ -7,14 +7,15 @@
 
 use std::{
     collections::BTreeMap,
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use chrono::{DateTime, Timelike, Utc};
 
-use crate::store::{Frame, MINUTE_FORMAT, Store, parse_minute, remove_if_exists, write_atomic};
+use crate::store::{Frame, MINUTE_FORMAT, Store, parse_minute, part_path, remove_if_exists};
 
 /// Extension of a queued job: an ffconcat list of frame paths.
 pub const JOB: &str = "job";
@@ -173,11 +174,30 @@ pub fn submit(store: &Store, spec: &TimelapseSpec) -> io::Result<Submitted> {
     fs::create_dir_all(store.out_dir())?;
     // Resubmitting retries a failure.
     remove_if_exists(&store.out_file(&name, ERR))?;
-    write_atomic(
-        &store.out_file(&name, JOB),
-        ffconcat(store, &frames)?.as_bytes(),
-    )?;
-    Ok(Submitted::Queued)
+    write_job(&store.out_file(&name, JOB), &ffconcat(store, &frames)?)
+}
+
+/// Write `<job>.part`, then rename it to `job`. The part file is created exclusively: if it
+/// already exists, a concurrent submit of the same selection is writing it, so this one is
+/// already queued. Startup cleanup removes a part left behind by a crash.
+fn write_job(job: &Path, contents: &str) -> io::Result<Submitted> {
+    let part = part_path(job);
+    let mut file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&part)
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Ok(Submitted::Queued),
+        Err(e) => return Err(e),
+    };
+    let written = file
+        .write_all(contents.as_bytes())
+        .and_then(|()| fs::rename(&part, job));
+    if written.is_err() {
+        let _ = fs::remove_file(&part);
+    }
+    written.map(|()| Submitted::Queued)
 }
 
 /// Every timelapse in `out/`, newest first.
@@ -575,6 +595,19 @@ mod tests {
             Submitted::NoFrames
         );
         assert_eq!(f.statuses(), []);
+    }
+
+    #[test]
+    fn submit_leaves_a_concurrent_submit_of_the_same_selection_alone() {
+        let f = Fixture::new();
+        f.add_frames(&[at(11, 0, 0)]);
+        let s = spec(1, None);
+        // Another request for the same selection is still writing its job.
+        let part = f.put(&s.name(), "job.part", "in progress", 0);
+
+        assert_eq!(submit(&f.store, &s).unwrap(), Submitted::Queued);
+        assert_eq!(fs::read_to_string(&part).unwrap(), "in progress");
+        assert!(!f.store.out_file(&s.name(), JOB).exists());
     }
 
     #[test]
