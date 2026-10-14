@@ -1,4 +1,3 @@
-#![allow(dead_code)] // Removed in Task 5, once the timelapse code is wired into main.
 mod capture;
 mod config;
 mod encoder;
@@ -17,7 +16,10 @@ use tokio::{net::TcpListener, signal, sync::Notify};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::{capture::Capturer, config::Config, metrics::Metrics, store::Store, web::AppState};
+use crate::{
+    capture::Capturer, config::Config, encoder::Encoder, metrics::Metrics, store::Store,
+    web::AppState,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,8 +32,9 @@ async fn main() -> Result<()> {
 
     let cfg = Arc::new(Config::parse());
     let store = Store::new(&cfg.data_dir);
-    std::fs::create_dir_all(store.frames_dir())
-        .with_context(|| format!("creating {}", store.frames_dir().display()))?;
+    for dir in [store.frames_dir(), store.out_dir()] {
+        std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
     let removed = store
         .cleanup_parts()
         .context("removing stale .part files")?;
@@ -43,13 +46,16 @@ async fn main() -> Result<()> {
     }
 
     let capture = tokio::spawn(Capturer::new(cfg.clone(), store.clone(), metrics.clone()).run());
+    let wake = Arc::new(Notify::new());
+    let encoder =
+        tokio::spawn(Encoder::new(cfg.clone(), store.clone(), metrics.clone(), wake.clone()).run());
 
     let state = Arc::new(AppState {
         store,
         metrics,
         stale_after: cfg.stale_after(),
         started_at: Utc::now(),
-        wake: Arc::new(Notify::new()),
+        wake,
     });
     let listener = TcpListener::bind(cfg.listen_addr)
         .await
@@ -61,6 +67,7 @@ async fn main() -> Result<()> {
     tokio::select! {
         res = async { server.await } => res.context("http server failed")?,
         res = capture => bail!("capture task exited unexpectedly: {res:?}"),
+        res = encoder => bail!("encoder task exited unexpectedly: {res:?}"),
     }
     info!("shut down");
     Ok(())
