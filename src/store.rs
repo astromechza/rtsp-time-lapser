@@ -10,7 +10,8 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use tracing::warn;
 
 const DAY_FORMAT: &str = "%Y-%m-%d";
-const FRAME_FORMAT: &str = "%Y%m%d-%H%M";
+/// UTC minute format shared by frame names and timelapse names.
+pub const MINUTE_FORMAT: &str = "%Y%m%d-%H%M";
 const PART_SUFFIX: &str = ".part";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,13 +49,23 @@ impl Store {
         self.data_dir.join("frames")
     }
 
+    /// Timelapse jobs and outputs.
+    pub fn out_dir(&self) -> PathBuf {
+        self.data_dir.join("out")
+    }
+
+    /// `out/{name}.{ext}`.
+    pub fn out_file(&self, name: &str, ext: &str) -> PathBuf {
+        self.out_dir().join(format!("{name}.{ext}"))
+    }
+
     pub fn day_dir(&self, date: NaiveDate) -> PathBuf {
         self.frames_dir().join(date.format(DAY_FORMAT).to_string())
     }
 
     pub fn frame_path(&self, time: DateTime<Utc>) -> PathBuf {
         self.day_dir(time.date_naive())
-            .join(format!("{}.jpg", time.format(FRAME_FORMAT)))
+            .join(format!("{}.jpg", time.format(MINUTE_FORMAT)))
     }
 
     /// Days that contain a valid day directory, newest first.
@@ -82,6 +93,19 @@ impl Store {
             }
         }
         frames.sort_by_key(|f| f.time);
+        Ok(frames)
+    }
+
+    /// Valid frames with `from <= time <= to`, oldest first. Only days in the range are read.
+    pub fn frames_between(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> io::Result<Vec<Frame>> {
+        let mut frames = Vec::new();
+        for date in self.day_dates()? {
+            if date < from.date_naive() || date > to.date_naive() {
+                continue;
+            }
+            let day = self.list_frames(date)?;
+            frames.extend(day.into_iter().filter(|f| f.time >= from && f.time <= to));
+        }
         Ok(frames)
     }
 
@@ -139,7 +163,11 @@ pub fn parse_day_name(name: &str) -> Option<NaiveDate> {
 
 /// Parse `YYYYMMDD-HHMM.jpg` as a UTC time.
 pub fn parse_frame_name(name: &str) -> Option<DateTime<Utc>> {
-    let stem = name.strip_suffix(".jpg")?;
+    parse_minute(name.strip_suffix(".jpg")?)
+}
+
+/// Parse exactly `YYYYMMDD-HHMM` as a UTC time.
+pub fn parse_minute(stem: &str) -> Option<DateTime<Utc>> {
     let all_digits = stem.bytes().enumerate().all(|(i, b)| match i {
         8 => b == b'-',
         _ => b.is_ascii_digit(),
@@ -147,7 +175,7 @@ pub fn parse_frame_name(name: &str) -> Option<DateTime<Utc>> {
     if stem.len() != 13 || !all_digits {
         return None;
     }
-    NaiveDateTime::parse_from_str(stem, FRAME_FORMAT)
+    NaiveDateTime::parse_from_str(stem, MINUTE_FORMAT)
         .ok()
         .map(|t| t.and_utc())
 }
@@ -289,6 +317,29 @@ mod tests {
         let newest = store.newest_frame().unwrap().unwrap();
         assert_eq!(newest.time, at(2026, 10, 10, 23, 59));
         assert_eq!(newest.url(), "/frames/2026-10-10/20261010-2359.jpg");
+    }
+
+    #[test]
+    fn frames_between_is_inclusive_across_days_and_skips_missing_days() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path());
+        for t in [
+            at(2026, 10, 9, 23, 59),
+            at(2026, 10, 10, 23, 58),
+            at(2026, 10, 10, 23, 59),
+            at(2026, 10, 12, 0, 0),
+            at(2026, 10, 12, 0, 1),
+        ] {
+            touch(&store.frame_path(t));
+        }
+
+        let times: Vec<_> = store
+            .frames_between(at(2026, 10, 10, 23, 59), at(2026, 10, 12, 0, 0))
+            .unwrap()
+            .into_iter()
+            .map(|f| f.time)
+            .collect();
+        assert_eq!(times, [at(2026, 10, 10, 23, 59), at(2026, 10, 12, 0, 0)]);
     }
 
     #[test]
