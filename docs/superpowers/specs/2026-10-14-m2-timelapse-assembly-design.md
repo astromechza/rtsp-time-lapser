@@ -158,7 +158,7 @@ A worker I/O error while scanning or pruning is logged as `warn` and retried aft
 | `POST /timelapses` | `application/x-www-form-urlencoded`: `from`, `to` (`YYYY-MM-DDTHH:MM`, interpreted as UTC), `step` (default 1), `hour_from`, `hour_to` (both blank or both 0–23). `Submitted::Done` → 303 to `/timelapses/{name}.mp4`. `Submitted::Queued` → notify the worker, 303 to `/timelapses`. Validation errors → 400 with a plain-text message. |
 | `GET /timelapses/{file}` | Serves `out/{name}.mp4` with `tower_http::services::ServeFile`, only when `file` is `{name}.mp4` and `name` parses as a spec; anything else is 404, so `.job`/`.err` files and traversal are unreachable. Supports range requests so browsers can seek. No immutable cache header (outputs are pruned and can be regenerated). |
 
-The form uses `<input type="datetime-local">` labelled "UTC"; the browser does not convert it. `from` defaults to the start of the current UTC day and `to` to the current minute.
+The form uses `<input type="datetime-local">` labelled "UTC"; the browser does not convert it. The hour fields are labelled "Daily hours from/to (UTC)" with a hint under the form: they apply to every day in the range (e.g. 6 to 20 for daylight, 20 to 6 for nights), blank for all hours. The datetimes set the overall span; the daily hours filter within it. `from` defaults to the start of the current UTC day and `to` to the current minute.
 
 UI additions:
 

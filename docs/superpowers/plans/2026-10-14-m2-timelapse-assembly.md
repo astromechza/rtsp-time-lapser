@@ -1919,7 +1919,7 @@ Adds `GET/POST /timelapses` and `GET /timelapses/{name}.mp4`, a nav link, and a 
 - Create: `src/web/timelapses.rs`
 - Modify: `templates/base.html` (`head` block, nav link), `templates/day.html` (button)
 - Create: `templates/timelapses.html`
-- Modify: `assets/style.css` (header flex, `.badge-busy`, `.button`, `.form`, `.inline-form`)
+- Modify: `assets/style.css` (header flex, `.badge-busy`, `.button`, `.form`, `.form-hint`, `.inline-form`)
 
 **Interfaces:**
 - Consumes: Task 2's `timelapse::{submit, list, Status, Submitted, Entry, MP4}`, Task 1's `TimelapseSpec::{validate, parse_name, name}`.
@@ -1969,7 +1969,7 @@ Adds `GET/POST /timelapses` and `GET /timelapses/{name}.mp4`, a nav link, and a 
          let status = res.status();
          let headers = res.headers().clone();
          let body = res.into_body().collect().await.unwrap().to_bytes();
-@@ -281,6 +304,125 @@ mod tests {
+@@ -281,6 +304,126 @@ mod tests {
          );
      }
  
@@ -1995,6 +1995,7 @@ Adds `GET/POST /timelapses` and `GET /timelapses/{name}.mp4`, a nav link, and a 
 +        let (status, _, body) = get(f.app(long_ago()), "/timelapses").await;
 +        assert_eq!(status, StatusCode::OK);
 +        assert!(body.contains("queued"), "{body}");
++        assert!(body.contains("Daily hours from (UTC)"), "{body}");
 +        assert!(body.contains(r#"http-equiv="refresh""#), "{body}");
 +    }
 +
@@ -2561,9 +2562,10 @@ fn format_size(bytes: u64) -> String {
   <label>From (UTC) <input type="datetime-local" name="from" value="{{ default_from }}" required></label>
   <label>To (UTC) <input type="datetime-local" name="to" value="{{ default_to }}" required></label>
   <label>Every Nth frame <input type="number" name="step" value="1" min="1"></label>
-  <label>From hour (UTC) <input type="number" name="hour_from" min="0" max="23" placeholder="any"></label>
-  <label>To hour (UTC) <input type="number" name="hour_to" min="0" max="23" placeholder="any"></label>
+  <label>Daily hours from (UTC) <input type="number" name="hour_from" min="0" max="23" placeholder="any"></label>
+  <label>Daily hours to (UTC) <input type="number" name="hour_to" min="0" max="23" placeholder="any"></label>
   <button class="button" type="submit">Create</button>
+  <p class="meta form-hint">Daily hours apply to every day in the range, e.g. 6 to 20 for daylight or 20 to 6 for nights. Leave both blank for all hours.</p>
 </form>
 
 {% if rows.is_empty() %}
@@ -2601,7 +2603,7 @@ fn format_size(bytes: u64) -> String {
    padding: 0.75rem var(--gap);
    border-bottom: 1px solid var(--border);
  }
-@@ -72,6 +75,40 @@ a:hover { text-decoration: underline; }
+@@ -72,6 +75,42 @@ a:hover { text-decoration: underline; }
  
  .badge-ok { background: var(--ok); }
  .badge-bad { background: var(--bad); }
@@ -2637,6 +2639,8 @@ fn format_size(bytes: u64) -> String {
 +  color: var(--fg);
 +  font: inherit;
 +}
++
++.form-hint { flex-basis: 100%; margin: 0; }
 +
 +.inline-form { margin-bottom: var(--gap); }
  
