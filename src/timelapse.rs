@@ -171,7 +171,13 @@ pub struct Entry {
 /// Queue `spec` unless its MP4 exists or it is already queued. `spec` must be validated.
 pub fn submit(store: &Store, spec: &TimelapseSpec) -> io::Result<Submitted> {
     let name = spec.name();
-    if store.out_file(&name, MP4).try_exists()? {
+    let mp4 = store.out_file(&name, MP4);
+    if mp4.try_exists()? {
+        // Retention counts from the last request, so a video asked for again is kept.
+        fs::File::options()
+            .write(true)
+            .open(&mp4)?
+            .set_modified(SystemTime::now())?;
         return Ok(Submitted::Done);
     }
     if store.out_file(&name, JOB).try_exists()? {
@@ -606,6 +612,19 @@ mod tests {
 
         f.put(&s.name(), MP4, "mp4", 1);
         assert_eq!(submit(&f.store, &s).unwrap(), Submitted::Done);
+    }
+
+    #[test]
+    fn resubmitting_a_finished_timelapse_restarts_its_retention() {
+        let f = Fixture::new();
+        f.add_frames(&[at(11, 0, 0)]);
+        let s = spec(1, None);
+        let mp4 = f.put(&s.name(), MP4, "mp4", 0);
+
+        assert_eq!(submit(&f.store, &s).unwrap(), Submitted::Done);
+
+        assert_eq!(prune(&f.store, mtime(100)).unwrap(), 0);
+        assert!(mp4.exists());
     }
 
     #[test]
