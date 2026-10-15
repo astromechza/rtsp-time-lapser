@@ -198,9 +198,14 @@ impl Encoder {
                 Err(e) => {
                     self.metrics.record_encode_error();
                     let report = ffmpeg::describe_error(&e, &self.cfg.rtsp_url, ERROR_REPORT_LIMIT);
-                    write_atomic(&self.store.out_file(name, ERR), report.as_bytes())?;
                     let error = ffmpeg::truncate(&report, ERROR_LOG_LIMIT);
                     warn!(name, %error, "encoding timelapse failed");
+                    // Still drop the job below: keeping it would retry a failing encode on
+                    // every wake-up (e.g. while the disk is full).
+                    let err_file = self.store.out_file(name, ERR);
+                    if let Err(e) = write_atomic(&err_file, report.as_bytes()) {
+                        warn!(name, error = %e, "writing timelapse failure report failed");
+                    }
                 }
             }
         }
@@ -329,6 +334,20 @@ mod tests {
         assert!(!f.file(MP4).exists());
         assert!(!f.file(JOB).exists());
         assert!(!f.file("mp4.part").exists());
+        assert_eq!(f.encoder.metrics.encodes("error"), 1);
+    }
+
+    #[tokio::test]
+    async fn failure_report_that_cannot_be_written_still_removes_job() {
+        let f = Fixture::new("fail");
+        f.queue();
+        // A directory in the way makes writing the report fail, like a full disk would.
+        fs::create_dir(f.file("err.part")).unwrap();
+
+        f.encoder.drain().await.unwrap();
+
+        assert!(!f.file(JOB).exists());
+        assert!(!f.file(ERR).exists());
         assert_eq!(f.encoder.metrics.encodes("error"), 1);
     }
 
