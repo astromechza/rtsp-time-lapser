@@ -13,7 +13,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, TimeDelta, Timelike, Utc};
 
 use crate::store::{Frame, MINUTE_FORMAT, Store, parse_minute, part_path, remove_if_exists};
 
@@ -23,6 +23,16 @@ pub const JOB: &str = "job";
 pub const MP4: &str = "mp4";
 /// Extension of a failure report.
 pub const ERR: &str = "err";
+
+/// The newest minute whose frame should already be on disk. The capture ticker is not
+/// aligned to the minute, so the current minute's frame may still be missing.
+pub fn last_complete_minute(now: DateTime<Utc>) -> DateTime<Utc> {
+    let minute = now
+        .with_second(0)
+        .and_then(|t| t.with_nanosecond(0))
+        .expect("second 0 is always valid");
+    minute - TimeDelta::minutes(1)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelapseSpec {
@@ -84,8 +94,8 @@ impl TimelapseSpec {
         if let Some(e) = self.shape_error() {
             return Err(e.to_owned());
         }
-        if self.to > now {
-            return Err("to must not be in the future".to_owned());
+        if self.to > last_complete_minute(now) {
+            return Err("to must be before the current minute".to_owned());
         }
         Ok(())
     }
@@ -456,10 +466,22 @@ mod tests {
         let mut backwards = spec(1, None);
         backwards.from = at(12, 0, 0);
         assert_eq!(err(backwards), "from must not be after to");
+        // The current minute's frame may not have been captured yet.
+        let mid_last_minute = at(11, 23, 59) + chrono::TimeDelta::seconds(30);
+        assert_eq!(
+            spec(1, None).validate(mid_last_minute).unwrap_err(),
+            "to must be before the current minute"
+        );
         assert_eq!(
             spec(1, None).validate(at(11, 23, 58)).unwrap_err(),
-            "to must not be in the future"
+            "to must be before the current minute"
         );
+    }
+
+    #[test]
+    fn last_complete_minute_is_the_minute_before_now() {
+        let now = at(11, 7, 5) + chrono::TimeDelta::seconds(42);
+        assert_eq!(last_complete_minute(now), at(11, 7, 4));
     }
 
     #[test]

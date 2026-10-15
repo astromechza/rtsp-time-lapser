@@ -123,7 +123,9 @@ pub async fn list(State(state): State<Arc<AppState>>) -> Response {
             .any(|e| matches!(e.status, Status::Queued | Status::Running)),
         rows: entries.iter().map(Row::from).collect(),
         default_from: now.format("%Y-%m-%dT00:00").to_string(),
-        default_to: now.format(INPUT_FORMAT).to_string(),
+        default_to: timelapse::last_complete_minute(now)
+            .format(INPUT_FORMAT)
+            .to_string(),
     })
 }
 

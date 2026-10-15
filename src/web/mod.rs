@@ -363,7 +363,7 @@ mod tests {
             ("from=2026-10-11T00%3A00".to_owned(), "to must look like"),
             (
                 format!("from=2026-10-11T00%3A00&to={future}"),
-                "to must not be in the future",
+                "to must be before the current minute",
             ),
             (format!("{DAY_FORM}&step=0"), "step must be at least 1"),
             (
