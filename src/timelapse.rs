@@ -283,7 +283,10 @@ fn ffconcat(store: &Store, frames: &[Frame]) -> io::Result<String> {
     let mut out = String::from("ffconcat version 1.0\n");
     for frame in frames {
         let path = std::path::absolute(store.frame_path(frame.time))?;
-        out.push_str(&format!("file '{}'\n", path.display()));
+        // Inside single quotes nothing is special, so a quote closes the string, adds an
+        // escaped quote and reopens it.
+        let quoted = path.display().to_string().replace('\'', r"'\''");
+        out.push_str(&format!("file '{quoted}'\n"));
     }
     Ok(out)
 }
@@ -598,6 +601,28 @@ mod tests {
             )
         );
         assert_eq!(f.statuses(), [(spec(2, None).name(), Status::Queued)]);
+    }
+
+    #[test]
+    fn job_escapes_quotes_in_the_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path().join("ben's data"));
+        let frame = store.frame_path(at(11, 0, 0));
+        fs::create_dir_all(frame.parent().unwrap()).unwrap();
+        fs::write(&frame, b"jpeg").unwrap();
+
+        assert_eq!(submit(&store, &spec(1, None)).unwrap(), Submitted::Queued);
+
+        let job = fs::read_to_string(store.out_file(&spec(1, None).name(), JOB)).unwrap();
+        let root = std::path::absolute(dir.path()).unwrap();
+        assert_eq!(
+            job,
+            format!(
+                "ffconcat version 1.0\n\
+                 file '{}/ben'\\''s data/frames/2026-10-11/20261011-0000.jpg'\n",
+                root.display()
+            )
+        );
     }
 
     #[test]
