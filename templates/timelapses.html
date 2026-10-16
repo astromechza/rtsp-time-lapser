@@ -13,8 +13,21 @@
   <label>Every Nth frame <input type="number" name="step" value="1" min="1"></label>
   <label>Daily hours from (UTC) <input type="number" name="hour_from" min="0" max="23" placeholder="any"></label>
   <label>Daily hours to (UTC) <input type="number" name="hour_to" min="0" max="23" placeholder="any"></label>
+  <label>Quality (CRF)
+    <select name="crf">
+      <option value="">default ({{ default_crf }})</option>
+      {% for crf in crf_choices %}<option value="{{ crf }}">{{ crf }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Denoise
+    <select name="denoise">
+      <option value="">default ({{ default_denoise }})</option>
+      {% for denoise in denoise_choices %}<option value="{{ denoise }}">{{ denoise }}</option>{% endfor %}
+    </select>
+  </label>
   <button class="button" type="submit">Create</button>
   <p class="meta form-hint">Daily hours apply to every day in the range, e.g. 6 to 20 for daylight or 20 to 6 for nights. Leave both blank for all hours.</p>
+  <p class="meta form-hint">Lower CRF is sharper and bigger. Higher denoise smooths night grain but softens detail; 0 turns it off.</p>
 </form>
 
 {% if rows.is_empty() %}

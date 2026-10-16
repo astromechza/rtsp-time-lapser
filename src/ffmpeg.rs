@@ -64,6 +64,11 @@ pub fn fake_ffmpeg(name: &str) -> std::path::PathBuf {
                 "echo 'cannot open rtsp://viewer:s3cret@10.0.0.5:554/stream1' >&2\nexit 1\n",
             ),
             ("empty", "for a; do out=\"$a\"; done\n: > \"$out\"\n"),
+            // Records its arguments, one per line, as the output.
+            (
+                "args",
+                "for a; do out=\"$a\"; done\nprintf '%s\\n' \"$@\" > \"$out\"\n",
+            ),
             // The URL starts at stderr byte 495, so a 512-byte cut lands inside the password.
             (
                 "long",

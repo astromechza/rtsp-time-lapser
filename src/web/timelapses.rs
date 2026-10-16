@@ -18,6 +18,11 @@ use crate::timelapse::{self, Entry, MP4, Status, Submitted, TimelapseSpec};
 /// `<input type="datetime-local">` value format, read and written as UTC.
 pub const INPUT_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
+/// CRF values offered on the form, besides the configured default.
+const CRF_CHOICES: [u8; 9] = [16, 18, 20, 22, 24, 26, 28, 30, 32];
+/// Denoise strengths offered on the form, besides the configured default.
+const DENOISE_CHOICES: [u32; 10] = [0, 2, 4, 6, 8, 12, 16, 20, 24, 30];
+
 struct Row {
     name: String,
     range: String,
@@ -39,6 +44,12 @@ impl From<&Entry> for Row {
         let mut filter = format!("step {}", e.spec.step);
         if let Some((start, end)) = e.spec.hours {
             filter.push_str(&format!(", {start:02}:00\u{2013}{end:02}:00"));
+        }
+        if let Some(crf) = e.spec.crf {
+            filter.push_str(&format!(", crf {crf}"));
+        }
+        if let Some(denoise) = e.spec.denoise {
+            filter.push_str(&format!(", denoise {denoise}"));
         }
         let detail = match e.status {
             Status::Done => format_size(e.size),
@@ -73,6 +84,10 @@ struct TimelapsesPage {
     pending: bool,
     default_from: String,
     default_to: String,
+    default_crf: u8,
+    default_denoise: u32,
+    crf_choices: &'static [u8],
+    denoise_choices: &'static [u32],
 }
 
 /// Every field defaults to empty so missing fields get the same 400 as malformed ones.
@@ -84,6 +99,10 @@ pub struct CreateForm {
     step: String,
     hour_from: String,
     hour_to: String,
+    /// Empty keeps the configured default.
+    crf: String,
+    /// Empty keeps the configured default.
+    denoise: String,
 }
 
 impl CreateForm {
@@ -107,6 +126,8 @@ impl CreateForm {
             to,
             step,
             hours,
+            crf: parse_override("crf", &self.crf)?,
+            denoise: parse_override("denoise", &self.denoise)?,
         })
     }
 }
@@ -126,6 +147,10 @@ pub async fn list(State(state): State<Arc<AppState>>) -> Response {
         default_to: timelapse::last_complete_minute(now)
             .format(INPUT_FORMAT)
             .to_string(),
+        default_crf: state.encode_defaults.crf,
+        default_denoise: state.encode_defaults.denoise,
+        crf_choices: &CRF_CHOICES,
+        denoise_choices: &DENOISE_CHOICES,
     })
 }
 
@@ -183,6 +208,17 @@ fn parse_input_time(field: &str, value: &str) -> Result<DateTime<Utc>, String> {
         .ok_or_else(|| format!("{field} must look like 2026-10-11T07:05"))
 }
 
+/// An optional whole number; empty means "use the default".
+fn parse_override<T: std::str::FromStr>(field: &str, value: &str) -> Result<Option<T>, String> {
+    match value.trim() {
+        "" => Ok(None),
+        v => v
+            .parse()
+            .map(Some)
+            .map_err(|_| format!("{field} must be a whole number")),
+    }
+}
+
 fn parse_hour(value: &str) -> Result<u32, String> {
     value
         .parse()
@@ -212,6 +248,7 @@ mod tests {
             step: step.to_owned(),
             hour_from: hours.0.to_owned(),
             hour_to: hours.1.to_owned(),
+            ..CreateForm::default()
         }
     }
 
@@ -227,8 +264,19 @@ mod tests {
                 to: Utc.with_ymd_and_hms(2026, 10, 11, 23, 59, 0).unwrap(),
                 step: 1,
                 hours: Some((20, 6)),
+                crf: None,
+                denoise: None,
             }
         );
+
+        let spec = CreateForm {
+            crf: "22".to_owned(),
+            denoise: "0".to_owned(),
+            ..form("2026-10-11T00:00", "2026-10-11T23:59", "", ("", ""))
+        }
+        .spec()
+        .unwrap();
+        assert_eq!((spec.crf, spec.denoise), (Some(22), Some(0)));
     }
 
     #[test]
@@ -258,6 +306,20 @@ mod tests {
                 ("6", "-1")
             )),
             "hours must be between 0 and 23"
+        );
+        assert_eq!(
+            err(CreateForm {
+                crf: "high".to_owned(),
+                ..form("2026-10-11T00:00", "2026-10-11T23:59", "", ("", ""))
+            }),
+            "crf must be a whole number"
+        );
+        assert_eq!(
+            err(CreateForm {
+                denoise: "-1".to_owned(),
+                ..form("2026-10-11T00:00", "2026-10-11T23:59", "", ("", ""))
+            }),
+            "denoise must be a whole number"
         );
     }
 

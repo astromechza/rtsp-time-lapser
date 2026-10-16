@@ -99,7 +99,8 @@ a:hover { text-decoration: underline; }
 
 .form label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--muted); }
 
-.form input {
+.form input,
+.form select {
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
