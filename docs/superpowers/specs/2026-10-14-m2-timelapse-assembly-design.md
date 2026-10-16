@@ -173,7 +173,7 @@ New clap args with `env` fallbacks:
 | Env | Default | Purpose |
 |---|---|---|
 | `TIMELAPSE_FPS` | `30` | Output frame rate, ≥ 1 |
-| `TIMELAPSE_CRF` | `23` | x264 CRF, 0–51. 23 was picked from a real day (1439 frames at 2304×1296): 190 MB vs 256 MB at CRF 20 (veryfast, measured with ffmpeg 8.0) |
+| `TIMELAPSE_CRF` | `26` | x264 CRF, 0–51. Picked from a real day (1439 frames at 2304×1296, veryfast, ffmpeg 8.0): 256 MB at CRF 20, 190 MB at 23, 132 MB at 26; 26 chosen after visual comparison with 23 |
 | `TIMELAPSE_PRESET` | `veryfast` | x264 preset |
 | `TIMELAPSE_MAX_WIDTH` | unset | Downscale to at most this width; unset keeps native width |
 | `ENCODE_TIMEOUT_SECS` | `7200` | Kill an encode after this long, ≥ 1 |

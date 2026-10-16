@@ -18,7 +18,7 @@ Every setting is an env var (or the matching `--flag`):
 | `STALE_AFTER_SECS` | `180` | `/healthz` fails when the newest frame is older |
 | `FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg |
 | `TIMELAPSE_FPS` | `30` | Timelapse frame rate |
-| `TIMELAPSE_CRF` | `23` | x264 quality, 0 (lossless) to 51; lower is bigger and sharper |
+| `TIMELAPSE_CRF` | `26` | x264 quality, 0 (lossless) to 51; lower is bigger and sharper |
 | `TIMELAPSE_PRESET` | `veryfast` | x264 preset, `ultrafast` to `veryslow` |
 | `TIMELAPSE_MAX_WIDTH` | unset | Downscale timelapses to at most this width |
 | `ENCODE_TIMEOUT_SECS` | `7200` | Kill an encode after this long |
