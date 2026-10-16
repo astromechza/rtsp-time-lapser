@@ -52,7 +52,7 @@ pub struct Config {
     pub timelapse_fps: u32,
 
     /// Timelapse x264 quality (-crf), 0 (lossless) to 51 (worst).
-    #[arg(long, env = "TIMELAPSE_CRF", default_value_t = 20,
+    #[arg(long, env = "TIMELAPSE_CRF", default_value_t = 23,
           value_parser = clap::value_parser!(u8).range(0..=51))]
     pub timelapse_crf: u8,
 
@@ -259,6 +259,7 @@ mod tests {
     fn parses_timelapse_defaults_and_rejects_unknown_preset() {
         let cfg = Config::try_parse_from(["x", "--rtsp-url", "rtsp://cam/s"]).unwrap();
         assert_eq!(cfg.timelapse_preset, "veryfast");
+        assert_eq!(cfg.timelapse_crf, 23);
         assert_eq!(cfg.timelapse_max_width, None);
         assert_eq!(cfg.out_retention(), Duration::from_secs(7 * 86_400));
         let res = Config::try_parse_from([
