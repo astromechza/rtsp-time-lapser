@@ -62,6 +62,11 @@ pub struct Config {
                           "slow", "slower", "veryslow"])]
     pub timelapse_preset: String,
 
+    /// Spatial denoising strength (hqdn3d luma) before encoding; 0 turns it off.
+    #[arg(long, env = "TIMELAPSE_DENOISE", default_value_t = 8,
+          value_parser = clap::value_parser!(u32).range(0..=30))]
+    pub timelapse_denoise: u32,
+
     /// Downscale timelapses to at most this width when set.
     #[arg(long, env = "TIMELAPSE_MAX_WIDTH",
           value_parser = clap::value_parser!(u32).range(2..))]
@@ -182,6 +187,7 @@ pub fn test_config(data_dir: &std::path::Path, ffmpeg_bin: &std::path::Path) -> 
         timelapse_crf: 20,
         timelapse_preset: "veryfast".to_owned(),
         timelapse_max_width: None,
+        timelapse_denoise: 8,
         encode_timeout_secs: 5,
         out_retention_days: 7,
     }
@@ -260,6 +266,7 @@ mod tests {
         let cfg = Config::try_parse_from(["x", "--rtsp-url", "rtsp://cam/s"]).unwrap();
         assert_eq!(cfg.timelapse_preset, "veryfast");
         assert_eq!(cfg.timelapse_crf, 26);
+        assert_eq!(cfg.timelapse_denoise, 8);
         assert_eq!(cfg.timelapse_max_width, None);
         assert_eq!(cfg.out_retention(), Duration::from_secs(7 * 86_400));
         let res = Config::try_parse_from([

@@ -38,6 +38,8 @@ pub struct EncodeSettings {
     pub preset: String,
     /// Downscale to at most this width; `None` keeps the native width.
     pub max_width: Option<u32>,
+    /// `hqdn3d` spatial luma strength; 0 turns denoising off.
+    pub denoise: u32,
 }
 
 impl EncodeSettings {
@@ -47,6 +49,7 @@ impl EncodeSettings {
             crf: cfg.timelapse_crf,
             preset: cfg.timelapse_preset.clone(),
             max_width: cfg.timelapse_max_width,
+            denoise: cfg.timelapse_denoise,
         }
     }
 }
@@ -94,7 +97,13 @@ fn encode_args(job: &Path, part: &Path, settings: &EncodeSettings) -> Vec<OsStri
     };
     let fps = settings.fps.to_string();
     let crf = settings.crf.to_string();
-    let filter = format!("setpts=N/{fps}/TB,scale='{width}':-2");
+    // Spatial only: frames a minute apart differ too much for temporal denoising, which
+    // would ghost moving clouds and boats.
+    let denoise = match settings.denoise {
+        0 => String::new(),
+        luma => format!("hqdn3d={luma}:{}:0:0,", f64::from(luma) * 0.75),
+    };
+    let filter = format!("setpts=N/{fps}/TB,{denoise}scale='{width}':-2");
     let mut args: Vec<OsString> = [
         "-nostdin",
         "-loglevel",
@@ -253,12 +262,13 @@ mod tests {
         }
     }
 
-    fn settings(max_width: Option<u32>) -> EncodeSettings {
+    fn settings(max_width: Option<u32>, denoise: u32) -> EncodeSettings {
         EncodeSettings {
             fps: 30,
             crf: 20,
             preset: "veryfast".to_owned(),
             max_width,
+            denoise,
         }
     }
 
@@ -267,7 +277,7 @@ mod tests {
         let args = encode_args(
             Path::new("/data/out/x.job"),
             Path::new("/data/out/x.mp4.part"),
-            &settings(Some(1280)),
+            &settings(Some(1280), 8),
         );
         let args: Vec<_> = args.iter().map(|a| a.to_str().unwrap()).collect();
         assert_eq!(
@@ -283,7 +293,7 @@ mod tests {
                 "-i",
                 "/data/out/x.job",
                 "-vf",
-                "setpts=N/30/TB,scale='trunc(min(iw,1280)/2)*2':-2",
+                "setpts=N/30/TB,hqdn3d=8:6:0:0,scale='trunc(min(iw,1280)/2)*2':-2",
                 "-r",
                 "30",
                 "-c:v",
@@ -303,8 +313,14 @@ mod tests {
             ]
         );
 
-        let args = encode_args(Path::new("j"), Path::new("p"), &settings(None));
+        let args = encode_args(Path::new("j"), Path::new("p"), &settings(None, 0));
         assert!(args.contains(&OsString::from("setpts=N/30/TB,scale='trunc(iw/2)*2':-2")));
+
+        // Chroma strength follows hqdn3d's own default ratio of 0.75 of the luma strength.
+        let args = encode_args(Path::new("j"), Path::new("p"), &settings(None, 5));
+        assert!(args.contains(&OsString::from(
+            "setpts=N/30/TB,hqdn3d=5:3.75:0:0,scale='trunc(iw/2)*2':-2"
+        )));
     }
 
     #[tokio::test]
@@ -443,7 +459,7 @@ mod tests {
             Path::new("ffmpeg"),
             &job,
             &out,
-            &settings(None),
+            &settings(None, 8),
             Duration::from_secs(60),
         )
         .await

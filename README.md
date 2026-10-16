@@ -20,6 +20,7 @@ Every setting is an env var (or the matching `--flag`):
 | `TIMELAPSE_FPS` | `30` | Timelapse frame rate |
 | `TIMELAPSE_CRF` | `26` | x264 quality, 0 (lossless) to 51; lower is bigger and sharper |
 | `TIMELAPSE_PRESET` | `veryfast` | x264 preset, `ultrafast` to `veryslow` |
+| `TIMELAPSE_DENOISE` | `8` | Spatial denoising strength (`hqdn3d`) before encoding, 0 to 30; 0 turns it off |
 | `TIMELAPSE_MAX_WIDTH` | unset | Downscale timelapses to at most this width |
 | `ENCODE_TIMEOUT_SECS` | `7200` | Kill an encode after this long |
 | `OUT_RETENTION_DAYS` | `7` | Delete finished and failed timelapses after this many days |
