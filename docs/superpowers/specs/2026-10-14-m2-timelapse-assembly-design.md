@@ -175,7 +175,7 @@ New clap args with `env` fallbacks:
 | `TIMELAPSE_FPS` | `30` | Output frame rate, ≥ 1 |
 | `TIMELAPSE_CRF` | `26` | x264 CRF, 0–51. Picked from a real day (1439 frames at 2304×1296, veryfast, ffmpeg 8.0): 256 MB at CRF 20, 190 MB at 23, 132 MB at 26; 26 chosen after visual comparison with 23 |
 | `TIMELAPSE_PRESET` | `veryfast` | x264 preset |
-| `TIMELAPSE_DENOISE` | `8` | Spatial `hqdn3d` luma strength `d` (chroma 0.75·d, no temporal), 0–30; 0 omits the filter. Measured on a real day at CRF 26: 131 → 98 MiB (−25%), +17% encode time on the Mac; 12 made foliage look painted. Temporal denoising is off because frames a minute apart would ghost moving clouds and boats |
+| `TIMELAPSE_DENOISE` | `8` | Spatial `hqdn3d` luma strength `d` (chroma 0.75·d, no temporal), 0–30; 0 omits the filter. Measured on a real day at CRF 26: 131 → 98 MiB (−25%), +17% encode time on the Mac and 43 → 49 s (+14%) for the full day on the 16-core Atom; 12 made foliage look painted. Temporal denoising is off because frames a minute apart would ghost moving clouds and boats |
 | `TIMELAPSE_MAX_WIDTH` | unset | Downscale to at most this width; unset keeps native width |
 | `ENCODE_TIMEOUT_SECS` | `7200` | Kill an encode after this long, ≥ 1 |
 | `OUT_RETENTION_DAYS` | `7` | Prune finished and failed outputs older than this, ≥ 1 |

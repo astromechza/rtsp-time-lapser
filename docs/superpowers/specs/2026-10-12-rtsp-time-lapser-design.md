@@ -189,7 +189,7 @@ The image is built and pushed locally with podman (Docker is not used); CI does 
   - Pod `securityContext`: `runAsNonRoot`, UID/GID/`fsGroup` 10001, `fsGroupChangePolicy: OnRootMismatch`, `seccompProfile: RuntimeDefault`. Container: `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, drop all capabilities.
   - `RTSP_URL` from Secret `rtsp-time-lapser`, key `RTSP_URL`.
   - PVC mounted at `/data`; `emptyDir` at `/tmp` (root filesystem is read-only).
-  - Resources: requests `100m` CPU / `64Mi`; limit `2Gi` memory (raised from `512Mi` in M2: a full-day x264 encode of 2304×1296 frames peaked at ~850 MiB on 12 cores, and x264 threads scale with cores); no CPU limit.
+  - Resources: requests `100m` CPU / `64Mi`; limit `2Gi` memory (raised from `512Mi` in M2: a full-day x264 encode of 2304×1296 frames peaked at ~850 MiB on 12 cores and 1047 MiB (ffmpeg VmHWM) on the 16-core Atom, where a 512Mi container was OOM-killed); no CPU limit.
   - `startupProbe`: `/healthz`, period 10s, failureThreshold 30.
   - `livenessProbe`: `/healthz`, period 60s, failureThreshold 10 (~10 min restart cadence when frames are stale).
   - `readinessProbe`: TCP socket on the HTTP port, period 30s. Not `/healthz`: the UI must stay browsable while the camera is down.
