@@ -20,7 +20,7 @@ Success criteria:
 |---|---|---|
 | **M1** | Crate scaffold, capture loop, startup cleanup, `/healthz`, `/metrics`, HTML browse UI, container image, Kustomize manifests, CI | Fully specified; first implementation plan |
 | **M2** | Timelapse assembly from JPEGs, triggered from the HTML UI | Specified in [M2 design](2026-10-14-m2-timelapse-assembly-design.md) |
-| **M3** | Daily H.265 archive, retention, archive-backed assembly | Outline only; designed in detail after M1 is deployed |
+| **M3** | Daily H.264 archive, retention, archive-backed assembly | Outline only; designed in detail after M1 is deployed |
 
 The UI is HTML only. There is no JSON API in any milestone.
 
@@ -237,7 +237,7 @@ See [M2 design](2026-10-14-m2-timelapse-assembly-design.md). M2 replaces the ear
 
 ## M3 outline: archive and retention (not yet designed in detail)
 
-- Task at startup and hourly: for completed UTC days older than `JPEG_RETENTION_DAYS` (default 14) without an archive, write `.idx`, encode with `libx265 -crf 20` and `hqdn3d` (preset configurable; the Atom is slow), verify `ffprobe` frame count equals `.idx` line count, rename `.mp4.part` and `.idx.part`, then delete the day directory.
+- Task at startup and hourly: for completed UTC days older than `JPEG_RETENTION_DAYS` (default 14) without an archive, write `.idx`, encode with H.264 (`libx264`) through M2's `encode` (H.265 was measured at 40–55% smaller but 3–5× slower to encode and not universally playable in browsers; H.264 was chosen for the Atom; `hqdn3d` denoising is still to be evaluated), verify `ffprobe` frame count equals `.idx` line count, rename `.mp4.part` and `.idx.part`, then delete the day directory.
 - `ARCHIVE_RETENTION_DAYS` unset by default (keep forever).
 - Assembly gains an archive path for archived days; the simplest correct approach is chosen at M3 design time.
 - Day page shows a `<video>` for archived days.
