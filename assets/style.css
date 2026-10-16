@@ -37,6 +37,9 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .site-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
   padding: 0.75rem var(--gap);
   border-bottom: 1px solid var(--border);
 }
@@ -72,6 +75,42 @@ a:hover { text-decoration: underline; }
 
 .badge-ok { background: var(--ok); }
 .badge-bad { background: var(--bad); }
+.badge-busy { background: var(--muted); }
+
+.button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover { border-color: var(--accent); }
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--gap);
+  margin-bottom: calc(var(--gap) * 2);
+}
+
+.form label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--muted); }
+
+.form input {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.form-hint { flex-basis: 100%; margin: 0; }
+
+.inline-form { margin-bottom: var(--gap); }
 
 .table { border-collapse: collapse; min-width: 20rem; }
 .table th, .table td { padding: 0.25rem 0.75rem; border-bottom: 1px solid var(--border); text-align: left; }

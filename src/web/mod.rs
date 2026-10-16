@@ -1,5 +1,6 @@
 mod health;
 mod pages;
+mod timelapses;
 
 use std::{fmt::Display, sync::Arc, time::Duration};
 
@@ -12,6 +13,7 @@ use axum::{
     routing::get,
 };
 use chrono::{DateTime, Utc};
+use tokio::sync::Notify;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::error;
 
@@ -22,6 +24,8 @@ pub struct AppState {
     pub metrics: Metrics,
     pub stale_after: Duration,
     pub started_at: DateTime<Utc>,
+    /// Wakes the encoder after a job is queued.
+    pub wake: Arc<Notify>,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -33,6 +37,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/", get(pages::index))
         .route("/days/{date}", get(pages::day))
         .route("/latest.jpg", get(health::latest))
+        .route(
+            "/timelapses",
+            get(timelapses::list).post(timelapses::create),
+        )
+        .route("/timelapses/{file}", get(timelapses::video))
         .route("/style.css", get(stylesheet))
         .nest_service("/frames", frames)
         .layer(TraceLayer::new_for_http())
@@ -108,6 +117,7 @@ mod tests {
                 metrics: Metrics::new(),
                 stale_after: Duration::from_secs(180),
                 started_at,
+                wake: Arc::new(Notify::new()),
             }))
         }
 
@@ -117,10 +127,23 @@ mod tests {
     }
 
     async fn get(app: Router, uri: &str) -> (StatusCode, axum::http::HeaderMap, String) {
-        let res = app
-            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
-            .await
+        send(app, Request::get(uri).body(Body::empty()).unwrap()).await
+    }
+
+    async fn post(
+        app: Router,
+        uri: &str,
+        form: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, String) {
+        let req = Request::post(uri)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(form.to_owned()))
             .unwrap();
+        send(app, req).await
+    }
+
+    async fn send(app: Router, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap, String) {
+        let res = app.oneshot(req).await.unwrap();
         let status = res.status();
         let headers = res.headers().clone();
         let body = res.into_body().collect().await.unwrap().to_bytes();
@@ -279,6 +302,126 @@ mod tests {
             body.contains("timelapse_last_frame_timestamp_seconds"),
             "{body}"
         );
+    }
+
+    const DAY_NAME: &str = "20261011-0000_20261011-2359_s1";
+    const DAY_FORM: &str = "from=2026-10-11T00%3A00&to=2026-10-11T23%3A59";
+
+    fn day_frame() -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339("2026-10-11T07:05:00Z")
+            .unwrap()
+            .to_utc()
+    }
+
+    #[tokio::test]
+    async fn post_timelapse_queues_job_and_lists_it() {
+        let f = Fixture::new();
+        f.add_frame(day_frame());
+
+        let (status, headers, body) = post(f.app(long_ago()), "/timelapses", DAY_FORM).await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "{body}");
+        assert_eq!(headers[header::LOCATION], "/timelapses");
+        assert!(f.store.out_file(DAY_NAME, "job").exists());
+
+        let (status, _, body) = get(f.app(long_ago()), "/timelapses").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("queued"), "{body}");
+        assert!(body.contains("Daily hours from (UTC)"), "{body}");
+        assert!(body.contains(r#"http-equiv="refresh""#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn post_finished_timelapse_redirects_to_video() {
+        let f = Fixture::new();
+        std::fs::create_dir_all(f.store.out_dir()).unwrap();
+        std::fs::write(f.store.out_file(DAY_NAME, "mp4"), "0123456789").unwrap();
+
+        let (status, headers, _) = post(f.app(long_ago()), "/timelapses", DAY_FORM).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        let location = headers[header::LOCATION].to_str().unwrap().to_owned();
+        assert_eq!(location, format!("/timelapses/{DAY_NAME}.mp4"));
+
+        let (status, _, body) = get(f.app(long_ago()), &location).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, "0123456789");
+
+        let req = Request::get(&location)
+            .header(header::RANGE, "bytes=2-4")
+            .body(Body::empty())
+            .unwrap();
+        let (status, _, body) = send(f.app(long_ago()), req).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+        assert_eq!(body, "234");
+    }
+
+    #[tokio::test]
+    async fn post_timelapse_rejects_bad_input() {
+        let f = Fixture::new();
+        f.add_frame(day_frame());
+        let future = (Utc::now() + TimeDelta::hours(1)).format("%Y-%m-%dT%H%%3A%M");
+        for (form, message) in [
+            ("from=2026-10-11T00%3A00".to_owned(), "to must look like"),
+            (
+                format!("from=2026-10-11T00%3A00&to={future}"),
+                "to must be before the current minute",
+            ),
+            (format!("{DAY_FORM}&step=0"), "step must be at least 1"),
+            (
+                format!("{DAY_FORM}&hour_from=0&hour_to=6"),
+                "no frames in that range",
+            ),
+        ] {
+            let (status, _, body) = post(f.app(long_ago()), "/timelapses", &form).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{form}");
+            assert!(body.contains(message), "{form}: {body}");
+        }
+        assert!(!f.store.out_file(DAY_NAME, "job").exists());
+    }
+
+    #[tokio::test]
+    async fn timelapse_list_shows_finished_and_failed_without_refresh() {
+        let f = Fixture::new();
+        std::fs::create_dir_all(f.store.out_dir()).unwrap();
+        std::fs::write(f.store.out_file(DAY_NAME, "mp4"), "x").unwrap();
+        let failed = "20261012-0000_20261012-2359_s1";
+        std::fs::write(f.store.out_file(failed, "err"), "ffmpeg exited\nmore").unwrap();
+
+        let (status, _, body) = get(f.app(long_ago()), "/timelapses").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            body.contains(&format!("/timelapses/{DAY_NAME}.mp4")),
+            "{body}"
+        );
+        assert!(body.contains("ffmpeg exited"), "{body}");
+        assert!(!body.contains("more"), "{body}");
+        assert!(!body.contains(r#"http-equiv="refresh""#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn timelapse_files_other_than_videos_are_not_served() {
+        let f = Fixture::new();
+        std::fs::create_dir_all(f.store.out_dir()).unwrap();
+        std::fs::write(f.store.out_file(DAY_NAME, "job"), "list").unwrap();
+        std::fs::write(f.path().join("secret.txt"), "secret").unwrap();
+        for uri in [
+            format!("/timelapses/{DAY_NAME}.job"),
+            "/timelapses/notes.mp4".to_owned(),
+            "/timelapses/..%2Fsecret.txt".to_owned(),
+            format!("/timelapses/{DAY_NAME}.mp4"),
+        ] {
+            let (status, _, _) = get(f.app(long_ago()), &uri).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn day_page_offers_timelapse_of_the_day() {
+        let f = Fixture::new();
+        f.add_frame(day_frame());
+        let (_, _, body) = get(f.app(long_ago()), "/days/2026-10-11").await;
+        assert!(body.contains(r#"action="/timelapses""#), "{body}");
+        assert!(body.contains(r#"value="2026-10-11T00:00""#), "{body}");
+        assert!(body.contains(r#"value="2026-10-11T23:59""#), "{body}");
     }
 
     #[tokio::test]

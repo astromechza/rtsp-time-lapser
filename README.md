@@ -1,6 +1,6 @@
 # rtsp-time-lapser
 
-Captures one frame per minute from an RTSP camera to disk and serves a small HTML UI to browse them. Timelapse assembly (M2) and daily archiving (M3) come later. See [the design spec](docs/superpowers/specs/2026-10-12-rtsp-time-lapser-design.md).
+Captures one frame per minute from an RTSP camera to disk, serves a small HTML UI to browse them, and assembles any time range into an MP4 timelapse from the UI. Daily archiving (M3) comes later. See [the design spec](docs/superpowers/specs/2026-10-12-rtsp-time-lapser-design.md) and [the M2 timelapse spec](docs/superpowers/specs/2026-10-14-m2-timelapse-assembly-design.md).
 
 ## Configuration
 
@@ -17,9 +17,29 @@ Every setting is an env var (or the matching `--flag`):
 | `SCALE_WIDTH` | unset | Scale frames to this width |
 | `STALE_AFTER_SECS` | `180` | `/healthz` fails when the newest frame is older |
 | `FFMPEG_BIN` | `ffmpeg` | Path to ffmpeg |
+| `TIMELAPSE_FPS` | `30` | Timelapse frame rate |
+| `TIMELAPSE_CRF` | `26` | x264 quality, 0 (lossless) to 51; lower is bigger and sharper |
+| `TIMELAPSE_PRESET` | `veryfast` | x264 preset, `ultrafast` to `veryslow` |
+| `TIMELAPSE_DENOISE` | `8` | Spatial denoising strength (`hqdn3d`) before encoding, 0 to 30; 0 turns it off |
+| `TIMELAPSE_MAX_WIDTH` | unset | Downscale timelapses to at most this width |
+| `ENCODE_TIMEOUT_SECS` | `7200` | Kill an encode after this long |
+| `OUT_RETENTION_DAYS` | `7` | Delete finished and failed timelapses after this many days |
 | `RUST_LOG` | `info` | Log filter |
 
 Frames land in `DATA_DIR/frames/YYYY-MM-DD/YYYYMMDD-HHMM.jpg` (UTC).
+
+## Timelapses
+
+`/timelapses` takes a UTC range, a step (keep every Nth frame) and an optional UTC hour window (e.g. 6 to 20, or 20 to 6 for nights only). Each day page has a "Timelapse this day" button. Jobs are encoded one at a time and survive restarts; the files live in `DATA_DIR/out/`:
+
+| File | Meaning |
+|---|---|
+| `{name}.job` | Queued: an ffconcat list of the selected frames |
+| `{name}.mp4.part` | Encoding |
+| `{name}.mp4` | Done |
+| `{name}.err` | Failed: ffmpeg's error. Submit the same range again to retry |
+
+`{name}` encodes the selection, e.g. `20261011-0000_20261011-2359_s1_h06-20`, so submitting the same selection twice never encodes twice.
 
 ## Development
 
@@ -32,6 +52,12 @@ Try a capture against the real camera (needs `ffmpeg` locally):
 
 ```bash
 TEST_RTSP_URL='rtsp://viewer:pass@10.0.0.5:554/stream1' cargo test real_camera -- --ignored --nocapture
+```
+
+Encode generated frames with real ffmpeg (needs `ffmpeg` and `ffprobe` locally):
+
+```bash
+cargo test real_ffmpeg_encode -- --ignored --nocapture
 ```
 
 Run locally:
@@ -107,7 +133,7 @@ spec:
 
 ## Monitoring
 
-`/metrics` exposes `timelapse_last_frame_timestamp_seconds`, `timelapse_captures_total{result}` and `timelapse_capture_duration_seconds`. Suggested alert:
+`/metrics` exposes `timelapse_last_frame_timestamp_seconds`, `timelapse_captures_total{result}`, `timelapse_capture_duration_seconds`, `timelapse_encodes_total{result}` and `timelapse_encode_duration_seconds`. Suggested alert:
 
 ```promql
 time() - timelapse_last_frame_timestamp_seconds > 300

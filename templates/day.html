@@ -11,6 +11,12 @@
 
 <p class="meta">{{ frames.len() }} frames</p>
 
+<form class="inline-form" method="post" action="/timelapses">
+  <input type="hidden" name="from" value="{{ date }}T00:00">
+  <input type="hidden" name="to" value="{{ timelapse_to }}">
+  <button class="button" type="submit">Timelapse this day</button>
+</form>
+
 <div class="grid">
   {% for frame in samples %}
   <figure class="tile">
