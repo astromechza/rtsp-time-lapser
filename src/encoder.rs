@@ -21,7 +21,7 @@ use crate::{
     ffmpeg,
     metrics::Metrics,
     store::{Store, part_path, remove_if_exists, write_atomic},
-    timelapse::{self, ERR, JOB, MP4},
+    timelapse::{self, ERR, JOB, MP4, TimelapseSpec},
 };
 
 /// Failure reports in `.err` files are cut to this many bytes.
@@ -50,6 +50,15 @@ impl EncodeSettings {
             preset: cfg.timelapse_preset.clone(),
             max_width: cfg.timelapse_max_width,
             denoise: cfg.timelapse_denoise,
+        }
+    }
+
+    /// These settings with the overrides chosen for `spec`.
+    pub fn for_spec(&self, spec: &TimelapseSpec) -> Self {
+        Self {
+            crf: spec.crf.unwrap_or(self.crf),
+            denoise: spec.denoise.unwrap_or(self.denoise),
+            ..self.clone()
         }
     }
 }
@@ -198,7 +207,10 @@ impl Encoder {
         if !out.try_exists()? {
             let started = Instant::now();
             let limit = self.cfg.encode_timeout();
-            match encode(&self.cfg.ffmpeg_bin, &job, &out, &self.settings, limit).await {
+            // Queued names always parse: `pending_jobs` skips any that do not.
+            let settings = TimelapseSpec::parse_name(name)
+                .map_or_else(|| self.settings.clone(), |s| self.settings.for_spec(&s));
+            match encode(&self.cfg.ffmpeg_bin, &job, &out, &settings, limit).await {
                 Ok(()) => {
                     let took = started.elapsed();
                     self.metrics.record_encode_ok(took);
@@ -259,6 +271,15 @@ mod tests {
 
         fn queue(&self) {
             fs::write(self.file(JOB), "ffconcat version 1.0\n").unwrap();
+        }
+
+        /// Encode `name`'s job and return the ffmpeg arguments the `args` script recorded.
+        async fn encoded_args(&self, name: &str) -> Vec<String> {
+            let store = &self.encoder.store;
+            fs::write(store.out_file(name, JOB), "ffconcat version 1.0\n").unwrap();
+            self.encoder.drain().await.unwrap();
+            let args = fs::read_to_string(store.out_file(name, MP4)).unwrap();
+            args.lines().map(str::to_owned).collect()
         }
     }
 
@@ -321,6 +342,28 @@ mod tests {
         assert!(args.contains(&OsString::from(
             "setpts=N/30/TB,hqdn3d=5:3.75:0:0,scale='trunc(iw/2)*2':-2"
         )));
+    }
+
+    #[tokio::test]
+    async fn jobs_encode_with_their_own_crf_and_denoise() {
+        let f = Fixture::new("args");
+        let value_after = |args: &[String], flag: &str| {
+            let i = args.iter().position(|a| a == flag).unwrap();
+            args[i + 1].clone()
+        };
+
+        // test_config defaults: crf 20, denoise 8.
+        let args = f.encoded_args(NAME).await;
+        assert_eq!(value_after(&args, "-crf"), "20");
+        assert!(value_after(&args, "-vf").contains("hqdn3d=8:6:0:0"));
+
+        let args = f.encoded_args(&format!("{NAME}_c28_d0")).await;
+        assert_eq!(value_after(&args, "-crf"), "28");
+        assert!(!value_after(&args, "-vf").contains("hqdn3d"));
+
+        let args = f.encoded_args(&format!("{NAME}_d16")).await;
+        assert_eq!(value_after(&args, "-crf"), "20");
+        assert!(value_after(&args, "-vf").contains("hqdn3d=16:12:0:0"));
     }
 
     #[tokio::test]

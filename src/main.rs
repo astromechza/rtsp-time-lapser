@@ -17,7 +17,11 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::{
-    capture::Capturer, config::Config, encoder::Encoder, metrics::Metrics, store::Store,
+    capture::Capturer,
+    config::Config,
+    encoder::{EncodeSettings, Encoder},
+    metrics::Metrics,
+    store::Store,
     web::AppState,
 };
 
@@ -56,6 +60,7 @@ async fn main() -> Result<()> {
         stale_after: cfg.stale_after(),
         started_at: Utc::now(),
         wake,
+        encode_defaults: EncodeSettings::from_config(&cfg),
     });
     let listener = TcpListener::bind(cfg.listen_addr)
         .await

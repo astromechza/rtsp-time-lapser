@@ -45,10 +45,15 @@ pub struct TimelapseSpec {
     /// UTC hours `(start, end)` to keep, start inclusive, end exclusive. Wraps when
     /// `start > end`.
     pub hours: Option<(u32, u32)>,
+    /// x264 `-crf` for this timelapse; `None` uses the configured default.
+    pub crf: Option<u8>,
+    /// `hqdn3d` luma strength for this timelapse; `None` uses the configured default.
+    pub denoise: Option<u32>,
 }
 
 impl TimelapseSpec {
-    /// `{from}_{to}_s{step}[_h{start}-{end}]`, e.g. `20261011-0000_20261011-2359_s1_h06-20`.
+    /// `{from}_{to}_s{step}[_h{start}-{end}][_c{crf}][_d{denoise}]`, e.g.
+    /// `20261011-0000_20261011-2359_s1_h06-20_c22`.
     pub fn name(&self) -> String {
         let mut name = format!(
             "{}_{}_s{}",
@@ -59,23 +64,39 @@ impl TimelapseSpec {
         if let Some((start, end)) = self.hours {
             name.push_str(&format!("_h{start:02}-{end:02}"));
         }
+        if let Some(crf) = self.crf {
+            name.push_str(&format!("_c{crf}"));
+        }
+        if let Some(denoise) = self.denoise {
+            name.push_str(&format!("_d{denoise}"));
+        }
         name
     }
 
     /// Exact inverse of `name()`. Rejects anything `name()` would not produce and any spec
     /// that is invalid regardless of the current time.
     pub fn parse_name(name: &str) -> Option<Self> {
-        let mut parts = name.split('_');
+        let mut parts = name.split('_').peekable();
         let from = parse_minute(parts.next()?)?;
         let to = parse_minute(parts.next()?)?;
         let step = parts.next()?.strip_prefix('s')?.parse().ok()?;
-        let hours = match parts.next() {
+        let hours = match parts.next_if(|p| p.starts_with('h')) {
             None => None,
             Some(h) => {
-                let (start, end) = h.strip_prefix('h')?.split_once('-')?;
+                let (start, end) = h[1..].split_once('-')?;
                 Some((start.parse().ok()?, end.parse().ok()?))
             }
         };
+        let crf = parts
+            .next_if(|p| p.starts_with('c'))
+            .map(|c| c[1..].parse())
+            .transpose()
+            .ok()?;
+        let denoise = parts
+            .next_if(|p| p.starts_with('d'))
+            .map(|d| d[1..].parse())
+            .transpose()
+            .ok()?;
         if parts.next().is_some() {
             return None;
         }
@@ -84,6 +105,8 @@ impl TimelapseSpec {
             to,
             step,
             hours,
+            crf,
+            denoise,
         };
         // The round trip rejects non-canonical spellings such as `s01` or `s+1`.
         (spec.shape_error().is_none() && spec.name() == name).then_some(spec)
@@ -121,6 +144,12 @@ impl TimelapseSpec {
             if start == end {
                 return Some("hour range must not be empty");
             }
+        }
+        if self.crf.is_some_and(|crf| crf > 51) {
+            return Some("crf must be between 0 and 51");
+        }
+        if self.denoise.is_some_and(|denoise| denoise > 30) {
+            return Some("denoise must be between 0 and 30");
         }
         if self.from > self.to {
             return Some("from must not be after to");
@@ -407,6 +436,8 @@ mod tests {
             to: at(11, 23, 59),
             step,
             hours,
+            crf: None,
+            denoise: None,
         }
     }
 
@@ -434,6 +465,28 @@ mod tests {
                 spec(1, Some((20, 6))),
                 "20261011-0000_20261011-2359_s1_h20-06",
             ),
+            (
+                TimelapseSpec {
+                    crf: Some(22),
+                    ..spec(1, None)
+                },
+                "20261011-0000_20261011-2359_s1_c22",
+            ),
+            (
+                TimelapseSpec {
+                    denoise: Some(0),
+                    ..spec(1, Some((20, 6)))
+                },
+                "20261011-0000_20261011-2359_s1_h20-06_d0",
+            ),
+            (
+                TimelapseSpec {
+                    crf: Some(18),
+                    denoise: Some(16),
+                    ..spec(2, Some((20, 6)))
+                },
+                "20261011-0000_20261011-2359_s2_h20-06_c18_d16",
+            ),
         ] {
             assert_eq!(s.name(), name);
             assert_eq!(TimelapseSpec::parse_name(name), Some(s), "{name}");
@@ -455,6 +508,13 @@ mod tests {
             "20261011-0000_20261011-2359_s1_h06-20_x",
             "20261012-0000_20261011-2359_s1",
             "20261011-0000_20261011-2359_s1.mp4",
+            "20261011-0000_20261011-2359_s1_c52",
+            "20261011-0000_20261011-2359_s1_c022",
+            "20261011-0000_20261011-2359_s1_c",
+            "20261011-0000_20261011-2359_s1_d31",
+            "20261011-0000_20261011-2359_s1_d8_c22",
+            "20261011-0000_20261011-2359_s1_c22_h06-20",
+            "20261011-0000_20261011-2359_s1_c22_c22",
         ] {
             assert_eq!(TimelapseSpec::parse_name(name), None, "{name}");
         }
@@ -472,6 +532,20 @@ mod tests {
             "hours must be between 0 and 23"
         );
         assert_eq!(err(spec(1, Some((6, 6)))), "hour range must not be empty");
+        assert_eq!(
+            err(TimelapseSpec {
+                crf: Some(52),
+                ..spec(1, None)
+            }),
+            "crf must be between 0 and 51"
+        );
+        assert_eq!(
+            err(TimelapseSpec {
+                denoise: Some(31),
+                ..spec(1, None)
+            }),
+            "denoise must be between 0 and 30"
+        );
         let mut backwards = spec(1, None);
         backwards.from = at(12, 0, 0);
         assert_eq!(err(backwards), "from must not be after to");
@@ -578,6 +652,8 @@ mod tests {
             to: at(d, 23, 59),
             step: 1,
             hours: None,
+            crf: None,
+            denoise: None,
         }
         .name()
     }

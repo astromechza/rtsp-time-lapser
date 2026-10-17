@@ -17,7 +17,7 @@ use tokio::sync::Notify;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tracing::error;
 
-use crate::{metrics::Metrics, store::Store};
+use crate::{encoder::EncodeSettings, metrics::Metrics, store::Store};
 
 pub struct AppState {
     pub store: Store,
@@ -26,6 +26,8 @@ pub struct AppState {
     pub started_at: DateTime<Utc>,
     /// Wakes the encoder after a job is queued.
     pub wake: Arc<Notify>,
+    /// What a timelapse is encoded with when the form leaves a setting on its default.
+    pub encode_defaults: EncodeSettings,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -92,6 +94,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+    use crate::config::test_config;
 
     struct Fixture {
         dir: tempfile::TempDir,
@@ -118,6 +121,10 @@ mod tests {
                 stale_after: Duration::from_secs(180),
                 started_at,
                 wake: Arc::new(Notify::new()),
+                encode_defaults: EncodeSettings::from_config(&test_config(
+                    self.dir.path(),
+                    Path::new("ffmpeg"),
+                )),
             }))
         }
 
@@ -328,6 +335,43 @@ mod tests {
         assert!(body.contains("queued"), "{body}");
         assert!(body.contains("Daily hours from (UTC)"), "{body}");
         assert!(body.contains(r#"http-equiv="refresh""#), "{body}");
+    }
+
+    #[tokio::test]
+    async fn post_timelapse_with_encode_overrides_queues_its_own_job() {
+        let f = Fixture::new();
+        f.add_frame(day_frame());
+
+        let (_, _, body) = get(f.app(long_ago()), "/timelapses").await;
+        assert!(body.contains("default (20)"), "{body}");
+        assert!(body.contains("default (8)"), "{body}");
+
+        let form = format!("{DAY_FORM}&crf=28&denoise=16");
+        let (status, _, body) = post(f.app(long_ago()), "/timelapses", &form).await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "{body}");
+        assert!(
+            f.store
+                .out_file(&format!("{DAY_NAME}_c28_d16"), "job")
+                .exists()
+        );
+
+        // Empty selects keep the defaults and so the plain name.
+        let form = format!("{DAY_FORM}&crf=&denoise=");
+        let (status, _, body) = post(f.app(long_ago()), "/timelapses", &form).await;
+        assert_eq!(status, StatusCode::SEE_OTHER, "{body}");
+        assert!(f.store.out_file(DAY_NAME, "job").exists());
+
+        let (_, _, body) = get(f.app(long_ago()), "/timelapses").await;
+        assert!(body.contains("step 1, crf 28, denoise 16"), "{body}");
+
+        let (status, _, body) = post(
+            f.app(long_ago()),
+            "/timelapses",
+            &format!("{DAY_FORM}&crf=60"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("crf must be between 0 and 51"), "{body}");
     }
 
     #[tokio::test]

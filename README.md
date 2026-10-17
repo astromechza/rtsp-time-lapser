@@ -39,7 +39,9 @@ Frames land in `DATA_DIR/frames/YYYY-MM-DD/YYYYMMDD-HHMM.jpg` (UTC).
 | `{name}.mp4` | Done |
 | `{name}.err` | Failed: ffmpeg's error. Submit the same range again to retry |
 
-`{name}` encodes the selection, e.g. `20261011-0000_20261011-2359_s1_h06-20`, so submitting the same selection twice never encodes twice.
+The form can also override `TIMELAPSE_CRF` and `TIMELAPSE_DENOISE` for one timelapse, to compare settings on the same footage.
+
+`{name}` encodes the selection and any overrides, e.g. `20261011-0000_20261011-2359_s1_h06-20_c22_d16`, so submitting the same selection twice never encodes twice.
 
 ## Development
 
